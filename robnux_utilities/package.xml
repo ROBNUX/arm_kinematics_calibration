@@ -1,0 +1,26 @@
+<?xml version="1.0"?>
+<package format="3">
+    <name>robnux_utilities</name>
+    <version>1.0.0</version>
+    <description>robnux utility package including file processing and gradient-based optimization</description>
+
+    <maintainer email="leon@robnux.net">Leon Liu, ROBNUX LLC</maintainer>
+
+    <license>MIT</license>
+
+    <buildtool_depend>ament_cmake</buildtool_depend>
+    
+    <build_depend>simple_motion_logger</build_depend>
+    <build_depend>robnux_kdl_common</build_depend>
+    <build_depend>robnux_kinematics_map</build_depend>
+    <build_depend>Eigen3</build_depend>
+    
+    <exec_depend>simple_motion_logger</exec_depend>
+    <exec_depend>robnux_kdl_common</exec_depend>
+    <exec_depend>robnux_kinematics_map</exec_depend>
+    
+    <export>
+       <build_type>ament_cmake</build_type>
+    </export>
+</package>
+    
