@@ -95,11 +95,15 @@ class KINEMATICS_API SerialArmCalib : public BaseKinematicMap,
    * for prismatic joint
    *   (2) branchFlags (configuration branch of IK solution) is related to
    *  both theta and d
+   * @param theta theta vector of DH parameters
+   * @param d d vector of DH parameters
+   * @param branchFlags output configuration branch flags
+   * @param jointTurns output joint turns
    */
   virtual void UpdateConfigTurn(const Eigen::VectorXd& theta,
                                 const Eigen::VectorXd& d,
-                                std::vector<int>* branchFlags,
-                                std::vector<int>* jointTurns) const;
+                                std::vector<int>& branchFlags,
+                                std::vector<int>& jointTurns) const;
 
   /*
    * @brief for serialArm, there is a generic way to compute translational
@@ -110,8 +114,8 @@ class KINEMATICS_API SerialArmCalib : public BaseKinematicMap,
    * @Jp_r 3 * nDHs rotational Jacobian matrix
    * @reduction whether we shall default robot base(which is identify matrix)
    */
-  virtual int CalcJacobian(const Eigen::VectorXd& kine_para, Pose* p,
-                           Eigen::MatrixXd* Jp_t, Eigen::MatrixXd* Jp_r,
+  virtual int CalcJacobian(const Eigen::VectorXd& kine_para, Pose& p,
+                           Eigen::MatrixXd* Jp_t, Eigen::MatrixXd& Jp_r,
                            const bool default_rob_base = false);
 
   /*
@@ -124,7 +128,7 @@ class KINEMATICS_API SerialArmCalib : public BaseKinematicMap,
    */
   virtual bool PickSubJacobian(const Eigen::MatrixXd& Jp_t,
                                const Eigen::MatrixXd& Jp_r,
-                               Eigen::MatrixXd* Js_t, Eigen::MatrixXd* Js_r,
+                               Eigen::MatrixXd& Js_t, Eigen::MatrixXd& Js_r,
                                const bool reduction = false);
 
   /*
