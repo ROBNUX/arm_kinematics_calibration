@@ -101,7 +101,7 @@ int XyzUrCalib::CartToJnt(const Pose &p, Eigen::VectorXd *q) {
   if (ret < 0) {
     strs.str("");
     strs << GetName() << ":"
-         << "UR->CartToJnt fails in " << __FUNCTION__ << ", line " << __LINE__
+         << "ur_calib->CartToJnt fails in " << __FUNCTION__ << ", line " << __LINE__
          << std::endl;
     LOG_ERROR(strs);
     return ret;
@@ -115,7 +115,7 @@ int XyzUrCalib::CartToJnt(const Pose &p, Eigen::VectorXd *q) {
   if (ret < 0) {
     strs.str("");
     strs << GetName() << ":"
-         << "XYZ->CartToJnt fails in " << __FUNCTION__ << ", line " << __LINE__
+         << "xyz_calib->CartToJnt fails in " << __FUNCTION__ << ", line " << __LINE__
          << std::endl;
     LOG_ERROR(strs);
     return ret;
@@ -123,8 +123,8 @@ int XyzUrCalib::CartToJnt(const Pose &p, Eigen::VectorXd *q) {
   if (q->size() < DoF_) {
     q->resize(DoF_);
   }
-  q->segment(0, xyz_calib->GetDoF()) =
-      XYZ_jnt q->segment(xyz_calib->GetDoF(), ur_calib->GetDoF()) = UR_jnt;
+  q->segment(0, xyz_calib->GetDoF()) = XYZ_jnt;
+  q->segment(xyz_calib->GetDoF(), ur_calib->GetDoF()) = UR_jnt;
   return 0;
 }
 
@@ -164,7 +164,7 @@ int XyzUrCalib::JntToCart(const Eigen::VectorXd &q, Pose *p) {
 
   Pose pUR;
   Eigen::VectorXd q2 = q.segment(xyz_calib->GetDoF(), ur_calib->GetDoF());
-  ret = UR->JntToCart(q2, &pUR);
+  ret = ur_calib->JntToCart(q2, &pUR);
   if (ret < 0) {
     return ret;
   }
@@ -218,7 +218,7 @@ int XyzUrCalib::JntToCart(const Eigen::VectorXd &q, const Eigen::VectorXd &qdot,
   }
   Eigen::VectorXd q1 = q.segment(0, xyz_calib->GetDoF());
   Eigen::VectorXd q1dot = qdot.segment(0, xyz_calib->GetDoF());
-  Eigen::VectroXd q2 = q.segment(xyz_calib->GetDoF(), ur_calib->GetDoF());
+  Eigen::VectorXd q2 = q.segment(xyz_calib->GetDoF(), ur_calib->GetDoF());
   Eigen::VectorXd q2dot = qdot.segment(xyz_calib->GetDoF(), ur_calib->GetDoF());
 
   Pose pXYZ, pUR;
@@ -255,7 +255,7 @@ int XyzUrCalib::JntToCart(const Eigen::VectorXd &q, const Eigen::VectorXd &qdot,
   return 0;
 }
 
-int XyzUrCalib:: ::CartToJnt(const Pose &p, const Twist &v, Eigen::VectorXd *q,
+int XyzUrCalib::CartToJnt(const Pose &p, const Twist &v, Eigen::VectorXd *q,
                              Eigen::VectorXd *qdot) {
   std::ostringstream strs;
   if (!q || !qdot) {
@@ -381,7 +381,7 @@ int XyzUrCalib::CalcJacobian(const Eigen::VectorXd &kine_para, Pose *p,
   return 0;
 }
 
-double XYZ_UR::CalibrateLaserCoplanar(
+double XyzUrCalib::CalibrateLaserCoplanar(
     const EigenDRef<Eigen::MatrixXd>
         &cart_measure_x,  // cartesian coordinates reported from robot
     const EigenDRef<Eigen::MatrixXd> &cart_measure_y,
@@ -426,10 +426,10 @@ double XYZ_UR::CalibrateLaserCoplanar(
   }
 
   double ret =
-      XYZ->CalibrateLaserCoplanar(cart_m_x, cart_m_y, cart_m_z, laserMat_x,
+      xyz_calib->CalibrateLaserCoplanar(cart_m_x, cart_m_y, cart_m_z, laserMat_x,
                                   laserMat_y, laserMat_z, laser_scale);
   if (ret >= 0) {  // if XYZ calibration sucess
-    if (UR->isCalibrated()) {
+    if (ur_calib->isCalibrated()) {
       isDHCalibrated_ = true;  // set XYZ-UR calibration success
     }
   }
@@ -770,9 +770,9 @@ int XyzUrCalib::CpsRobPath(
       size_t tFlag = cur_pt(8);
       std::vector<int> ikJointTurns(DoF_, 0);
       ConvertMultiTurnFlag(tFlag, &ikJointTurns);
-      std::vector<int> ikTurns_UR(UR->GetDoF(), 0);
-      for (size_t j = 0; j < UR->GetDoF(); j++) {
-        ikTurns_UR[j] = ikJointTurns[j + XYZ->GetDoF()];
+      std::vector<int> ikTurns_UR(ur_calib->GetDoF(), 0);
+      for (size_t j = 0; j < ur_calib->GetDoF(); j++) {
+        ikTurns_UR[j] = ikJointTurns[j + xyz_calib->GetDoF()];
       }
 
       Frame tmp_UR_fm(qtmp, v);  // initially set v as 0, and just use ideal
@@ -786,8 +786,8 @@ int XyzUrCalib::CpsRobPath(
 
       // default pose in default base and tool
       rf_pose_UR_orig.getDefaultPose(&df_pose_UR_orig);
-      UR->SetUsingCalibratedModel(false);  // using uncalibrated model
-      ret = UR->CartToJnt(
+      ur_calib->SetUsingCalibratedModel(false);  // using uncalibrated model
+      ret = ur_calib->CartToJnt(
           df_pose_UR_orig,
           &qUR_orig);  // compute ideal joint from idela orientation
       if (ret < 0) {
@@ -805,7 +805,7 @@ int XyzUrCalib::CpsRobPath(
       strs << GetName() << ":, ideal UR joint=" << qUR_orig_vec << std::endl;
       LOG_INFO(strs);
 
-      ret = UR->OptimizeJntAfterCalib(qUR_orig, rf_pose_UR_orig, &qUR_cal);
+      ret = ur_calib->OptimizeJntAfterCalib(qUR_orig, rf_pose_UR_orig, &qUR_cal);
       if (ret < 0) {
         strs.str("");
         strs << GetName() << ":"
@@ -821,8 +821,8 @@ int XyzUrCalib::CpsRobPath(
       LOG_INFO(strs);
     }
     // using uncalibrated model to compute the comp (or modified) orientation
-    UR->SetUsingCalibratedModel(false);
-    ret = UR->JntToCart(qUR_cal, &df_pose_UR_calib);
+    ur_calib->SetUsingCalibratedModel(false);
+    ret = ur_calib->JntToCart(qUR_cal, &df_pose_UR_calib);
     if (ret < 0) {
       strs.str("");
       strs << GetName() << " FK error, code  " << ret << ", jnt is " << act_UR
@@ -840,8 +840,8 @@ int XyzUrCalib::CpsRobPath(
     LOG_INFO(strs);
 
     // using calibrated model to compute the ideal UR pose
-    UR->SetUsingCalibratedModel(true);
-    ret = UR->JntToCart(qUR_cal, &df_pose_UR_orig);
+    ur_calib->SetUsingCalibratedModel(true);
+    ret = ur_calib->JntToCart(qUR_cal, &df_pose_UR_orig);
     if (ret < 0) {
       strs.str("");
       strs << GetName() << " FK error, code  " << ret << ", jnt is " << act_UR
@@ -866,7 +866,7 @@ int XyzUrCalib::CpsRobPath(
     rf_pose_UR_calib.getBranchFlags(&UR_flags_cal);
     rf_pose_UR_calib.getJointTurns(&UR_turns_cal);
 
-    Eigen::VectorXd d_UR_j_traj(UR->GetDoF()), md_UR_j_traj(UR->GetDoF());
+    Eigen::VectorXd d_UR_j_traj(ur_calib->GetDoF()), md_UR_j_traj(ur_calib->GetDoF());
     StdVec2EigenVec(qUR_orig, &d_UR_j_traj);  // ideal model  joint traj
     StdVec2EigenVec(qUR_cal, &md_UR_j_traj);  // compensated joint traj
 
@@ -899,7 +899,7 @@ int XyzUrCalib::CpsRobPath(
                                   // accepts identity orientation
     d_traj_fm.setRotation(r);
 
-    std::vector<int> ikXYZTurns(XYZ->GetDoF(), 0);
+    std::vector<int> ikXYZTurns(xyz_calib->GetDoF(), 0);
     std::vector<int> branchXYZ(3, 0);
     std::vector<int> XYZURTurns_orig, XYZURTurns_cal;
     XYZURTurns_orig.insert(XYZURTurns_orig.end(), ikXYZTurns.begin(),
@@ -917,23 +917,23 @@ int XyzUrCalib::CpsRobPath(
     // block base
     Pose mdPose, aPose;
     // ideal uncompensated xyz traj / compensated xyz traj
-    Eigen::VectorXd d_XYZ_j_traj(XYZ->GetDoF());
-    Eigen::VectorXd md_XYZ_j_traj(XYZ->GetDoF());
+    Eigen::VectorXd d_XYZ_j_traj(xyz_calib->GetDoF());
+    Eigen::VectorXd md_XYZ_j_traj(xyz_calib->GetDoF());
 
-    // step 2: call XYZ->CompSateEachPt (to be done in serialArm.cpp)
+    // step 2: call xyz_calib->CompSateEachPt (to be done in serialArm.cpp)
     ret =
-        XYZ->ErrCompensationDH(act_calibBase, act_origBase, newXYZ_Tool, dPose,
+        xyz_calib->ErrCompensationDH(act_calibBase, act_origBase, newXYZ_Tool, dPose,
                                &mdPose, &d_XYZ_j_traj, &md_XYZ_j_traj, &aPose);
     if (ret < 0) {
       strs.str("");
-      strs << GetName() << " XYZ->ErrCompensationDH error  " << ret
+      strs << GetName() << " xyz_calib->ErrCompensationDH error  " << ret
            << ", cart is " << dPose.ToString(true) << __FUNCTION__ << ", line "
            << __LINE__ << std::endl;
       LOG_ERROR(strs);
       return ret;
     }
-    d_j_traj->col(i).segment(0, XYZ->GetDoF()) = d_XYZ_j_traj;
-    d_j_traj->col(i).segment(XYZ->GetDoF(), UR->GetDoF()) = d_UR_j_traj;
+    d_j_traj->col(i).segment(0, xyz_calib->GetDoF()) = d_XYZ_j_traj;
+    d_j_traj->col(i).segment(xyz_calib->GetDoF(), ur_calib->GetDoF()) = d_UR_j_traj;
 
     dPose.setQuaternion(df_pose_UR_orig.getQuaternion());
     dPose.setBranchFlags(UR_flags_orig);
@@ -950,8 +950,8 @@ int XyzUrCalib::CpsRobPath(
         aPose.ToEigenVecPose();  // a_traj will return desired traj, aPose is
                                  // just for logging purpose
 
-    md_j_traj->col(i).segment(0, XYZ->GetDoF()) = md_XYZ_j_traj;
-    md_j_traj->col(i).segment(XYZ->GetDoF(), UR->GetDoF()) = md_UR_j_traj;
+    md_j_traj->col(i).segment(0, xyz_calib->GetDoF()) = md_XYZ_j_traj;
+    md_j_traj->col(i).segment(xyz_calib->GetDoF(), ur_calib->GetDoF()) = md_UR_j_traj;
 
     strs.str("");
     strs << GetName() << " pt  " << i << " desired joint "
@@ -967,7 +967,7 @@ int XyzUrCalib::CpsRobPath(
   return 0;
 }
 
-int XYZ_UR::PathFiltering(
+int XyzUrCalib::PathFiltering(
     const Eigen::VectorXd
         &calibTCP,  //  calibrated TCP of block w.r.t. UR flange
     const Eigen::VectorXd &origTCP,  // original TCP of block w.r.t. UR flange
@@ -1047,7 +1047,7 @@ int XYZ_UR::PathFiltering(
 
   // At every pt in desired traj, what is calibrated (accurate) UR joint and
   // orig (or errored/not accurate) UR joint
-  Eigen::VectorXd qUR_cal(UR->GetDoF(), 0), qUR_orig(UR->GetDoF(), 0);
+  Eigen::VectorXd qUR_cal(ur_calib->GetDoF(), 0), qUR_orig(ur_calib->GetDoF(), 0);
   // next we need to compute, at very pt, the calib / orig base of block w.r.t.
   // XYZ base using pose_UR_calib and pose_UR_orig and calibTCP /origTCP
   Frame calibBase, origBase;
@@ -1063,7 +1063,7 @@ int XYZ_UR::PathFiltering(
     LOG_INFO(strs);
     if (URJnt) {  // if desired traj contains desired UR joint traj
       // note: here act_UR is already the modified UR traj
-      act_UR = cur_pt.segment(XYZ->GetDoF(), UR->GetDoF());
+      act_UR = cur_pt.segment(xyz_calib->GetDoF(), ur_calib->GetDoF());
       EigenVec2StdVec(act_UR, &qUR_cal);
 
       qUR_orig = qUR_cal;  // if desired traj was given as (x,y,z,Ud,Rd), then
@@ -1081,9 +1081,9 @@ int XYZ_UR::PathFiltering(
       size_t tFlag = cur_pt(8);
       std::vector<int> ikJointTurns(DoF_, 0);
       ConvertMultiTurnFlag(tFlag, &ikJointTurns);
-      std::vector<int> ikTurns_UR(UR->GetDoF(), 0);
-      for (size_t j = 0; j < UR->GetDoF(); j++) {
-        ikTurns_UR[j] = ikJointTurns[j + XYZ->GetDoF()];
+      std::vector<int> ikTurns_UR(ur_calib->GetDoF(), 0);
+      for (size_t j = 0; j < ur_calib->GetDoF(); j++) {
+        ikTurns_UR[j] = ikJointTurns[j + xyz_calib->GetDoF()];
       }
 
       Frame tmp_UR_fm(qtmp, v);  // initially set v as 0, and just use ideal
@@ -1097,8 +1097,8 @@ int XYZ_UR::PathFiltering(
 
       // default pose in default base and tool
       rf_pose_UR_orig.getDefaultPose(&df_pose_UR_orig);
-      UR->SetUsingCalibratedModel(false);  // using uncalibrated model
-      ret = UR->CartToJnt(
+      ur_calib->SetUsingCalibratedModel(false);  // using uncalibrated model
+      ret = ur_calib->CartToJnt(
           df_pose_UR_orig,
           &qUR_orig);  // compute ideal joint from idela orientation
       if (ret < 0) {
@@ -1127,7 +1127,7 @@ int XYZ_UR::PathFiltering(
       // using uncalibrated model to compute the final ideal pose (because whose
       // trans might not be 0)
       /*
-      ret = UR->JntToCart(qUR_orig, &df_Pos_UR_orig);
+      ret = ur_calib->JntToCart(qUR_orig, &df_Pos_UR_orig);
       if (ret < 0) {
         strs.str("");
         strs << GetName() << " FK error, code  " << ret << ", jnt is " <<
@@ -1151,7 +1151,7 @@ int XYZ_UR::PathFiltering(
       // refPose  tmpRefOrig;
       // tmpRefOrig.setDefaultPose(df_pose_UR_orig);
       // tmpRefOrig.getPoseUnderNewRef(Frame(), newBaseTCP, &rf_pose_UR_orig);
-      ret = UR->OptimizeJntAfterCalib(qUR_orig, rf_pose_UR_orig, &qUR_cal);
+      ret = ur_calib->OptimizeJntAfterCalib(qUR_orig, rf_pose_UR_orig, &qUR_cal);
       if (ret < 0) {
         strs.str("");
         strs << GetName() << ":"
@@ -1167,8 +1167,8 @@ int XYZ_UR::PathFiltering(
       LOG_INFO(strs);
     }
     // using uncalibrated model to compute the comp (or modified) orientation
-    UR->SetUsingCalibratedModel(false);
-    ret = UR->JntToCart(qUR_cal, &df_pose_UR_calib);
+    ur_calib->SetUsingCalibratedModel(false);
+    ret = ur_calib->JntToCart(qUR_cal, &df_pose_UR_calib);
     if (ret < 0) {
       strs.str("");
       strs << GetName() << " FK error, code  " << ret << ", jnt is " << act_UR
@@ -1186,8 +1186,8 @@ int XYZ_UR::PathFiltering(
     LOG_INFO(strs);
 
     // using calibrated model to compute the ideal UR pose
-    UR->SetUsingCalibratedModel(true);
-    ret = UR->JntToCart(qUR_cal, &df_pose_UR_orig);
+    ur_calib->SetUsingCalibratedModel(true);
+    ret = ur_calib->JntToCart(qUR_cal, &df_pose_UR_orig);
     if (ret < 0) {
       strs.str("");
       strs << GetName() << " FK error, code  " << ret << ", jnt is " << act_UR
@@ -1212,7 +1212,7 @@ int XYZ_UR::PathFiltering(
     rf_pose_UR_calib.getBranchFlags(&UR_flags_cal);
     rf_pose_UR_calib.getJointTurns(&UR_turns_cal);
 
-    Eigen::VectorXd d_UR_j_traj(UR->GetDoF()), md_UR_j_traj(UR->GetDoF());
+    Eigen::VectorXd d_UR_j_traj(ur_calib->GetDoF()), md_UR_j_traj(ur_calib->GetDoF());
     StdVec2EigenVec(qUR_orig, &d_UR_j_traj);  // ideal model  joint traj
     StdVec2EigenVec(qUR_cal, &md_UR_j_traj);  // compensated joint traj
 
@@ -1245,7 +1245,7 @@ int XYZ_UR::PathFiltering(
                                   // accepts identity orientation
     d_traj_fm.setRotation(r);
 
-    std::vector<int> ikXYZTurns(XYZ->GetDoF(), 0);
+    std::vector<int> ikXYZTurns(xyz_calib->GetDoF(), 0);
     std::vector<int> branchXYZ(3, 0);
     std::vector<int> XYZURTurns_orig, XYZURTurns_cal;
     XYZURTurns_orig.insert(XYZURTurns_orig.end(), ikXYZTurns.begin(),
@@ -1263,23 +1263,23 @@ int XYZ_UR::PathFiltering(
     // block base
     Pose mdPose, aPose;
     // ideal uncompensated xyz traj / compensated xyz traj
-    Eigen::VectorXd d_XYZ_j_traj(XYZ->GetDoF());
-    Eigen::VectorXd md_XYZ_j_traj(XYZ->GetDoF());
+    Eigen::VectorXd d_XYZ_j_traj(xyz_calib->GetDoF());
+    Eigen::VectorXd md_XYZ_j_traj(xyz_calib->GetDoF());
 
-    // step 2: call XYZ->CompSateEachPt (to be done in serialArm.cpp)
+    // step 2: call xyz_calib->CompSateEachPt (to be done in serialArm.cpp)
     ret =
-        XYZ->ErrCompensationDH(calibBase, origBase, newXYZ_Tool, dPose, &mdPose,
+        xyz_calib->ErrCompensationDH(calibBase, origBase, newXYZ_Tool, dPose, &mdPose,
                                &d_XYZ_j_traj, &md_XYZ_j_traj, &aPose);
     if (ret < 0) {
       strs.str("");
-      strs << GetName() << " XYZ->ErrCompensationDH error  " << ret
+      strs << GetName() << " xyz_calib->ErrCompensationDH error  " << ret
            << ", cart is " << dPose.ToString(true) << __FUNCTION__ << ", line "
            << __LINE__ << std::endl;
       LOG_ERROR(strs);
       return ret;
     }
-    d_j_traj->col(i).segment(0, XYZ->GetDoF()) = d_XYZ_j_traj;
-    d_j_traj->col(i).segment(XYZ->GetDoF(), UR->GetDoF()) = d_UR_j_traj;
+    d_j_traj->col(i).segment(0, xyz_calib->GetDoF()) = d_XYZ_j_traj;
+    d_j_traj->col(i).segment(xyz_calib->GetDoF(), ur_calib->GetDoF()) = d_UR_j_traj;
 
     dPose.setQuaternion(df_pose_UR_orig.getQuaternion());
     dPose.setBranchFlags(UR_flags_orig);
@@ -1296,8 +1296,8 @@ int XYZ_UR::PathFiltering(
         aPose.ToEigenVecPose();  // a_traj will return desired traj, aPose is
                                  // just for logging purpose
 
-    md_j_traj->col(i).segment(0, XYZ->GetDoF()) = md_XYZ_j_traj;
-    md_j_traj->col(i).segment(XYZ->GetDoF(), UR->GetDoF()) = md_UR_j_traj;
+    md_j_traj->col(i).segment(0, xyz_calib->GetDoF()) = md_XYZ_j_traj;
+    md_j_traj->col(i).segment(xyz_calib->GetDoF(), ur_calib->GetDoF()) = md_UR_j_traj;
 
     strs.str("");
     strs << GetName() << " pt  " << i << " desired joint "
@@ -1313,7 +1313,7 @@ int XYZ_UR::PathFiltering(
   return 0;
 }
 
-double XYZ_UR::CalibrateLaserOrientation(
+double XyzUrCalib::CalibrateLaserOrientation(
     const EigenDRef<Eigen::MatrixXd>
         &jnt_measure,  //  | DoF * 6 | DoF * 6 | DoF * 6 | DoF * 6 | ..... Every
                        //  surface: 1 column points
@@ -1370,7 +1370,7 @@ double XYZ_UR::CalibrateLaserOrientation(
     return -ERR_ROB_CALIB_MEASURE_DATA_WRONG_DIM;
   }
   size_t numPlanes = num_col_jnt / numPtsInEachPlane;
-  Eigen::MatrixXd UR_jnt_measure(UR->GetDoF(), numPlanes);
+  Eigen::MatrixXd UR_jnt_measure(ur_calib->GetDoF(), numPlanes);
   Eigen::MatrixXd UR_cart_measure(num_row_cart, numPtsInEachPlane * numPlanes);
 
   double laser0 = laser_value;
@@ -1378,7 +1378,7 @@ double XYZ_UR::CalibrateLaserOrientation(
   // Eigen::VectorXd   bi(numPlanes, 0);
   for (size_t i = 0; i < numPlanes; i++) {
     Eigen::MatrixXd jnts = jnt_measure.block(
-        XYZ->GetDoF(), i * numPtsInEachPlane, UR->GetDoF(), numPtsInEachPlane);
+        xyz_calib->GetDoF(), i * numPtsInEachPlane, ur_calib->GetDoF(), numPtsInEachPlane);
     Eigen::MatrixXd carts = cart_measure.block(0, i * numPtsInEachPlane,
                                                num_row_cart, numPtsInEachPlane);
     Eigen::MatrixXd laser =
@@ -1404,19 +1404,19 @@ double XYZ_UR::CalibrateLaserOrientation(
       cart(laser_channel) =
           cart(laser_channel) - laser_scale * (laser(j) - laser0);
       Eigen::VectorXd tmpJnt, tmpCart;
-      XYZ->SetUsingCalibratedModel(false);
-      if (!XYZ->GetJntFromPose(cart, &tmpJnt)) {
+      xyz_calib->SetUsingCalibratedModel(false);
+      if (!xyz_calib->GetJntFromPose(cart, &tmpJnt)) {
         strs.str("");
-        strs << "XYZ->GetJntFromPose error with cart=" << cart
+        strs << "xyz_calib->GetJntFromPose error with cart=" << cart
              << ", in function" << __FUNCTION__ << " at line " << __LINE__
              << std::endl;
         LOG_ERROR(strs);
         return -2002;
       }
-      XYZ->SetUsingCalibratedModel(true);
-      if (!XYZ->GetPoseFromJnt(tmpJnt, &cart)) {
+      xyz_calib->SetUsingCalibratedModel(true);
+      if (!xyz_calib->GetPoseFromJnt(tmpJnt, &cart)) {
         strs.str("");
-        strs << "XYZ->GetPoseFromJnt error with jnt=" << tmpJnt
+        strs << "xyz_calib->GetPoseFromJnt error with jnt=" << tmpJnt
              << ", in function" << __FUNCTION__ << " at line " << __LINE__
              << std::endl;
         LOG_ERROR(strs);
@@ -1426,20 +1426,20 @@ double XYZ_UR::CalibrateLaserOrientation(
     }
   }
 
-  XYZ->SetUsingCalibratedModel(false);  // reset into uncalibrated mode
-  double ret = UR->CalibrateLaserOrientation(
+  xyz_calib->SetUsingCalibratedModel(false);  // reset into uncalibrated mode
+  double ret = ur_calib->CalibrateLaserOrientation(
       UR_jnt_measure, UR_cart_measure, laserMat_z_measure, laser_channel,
       laser_scale, laser_value, max_laser_dist, numPtsInEachPlane,
       surfaceArrays);
   if (ret >= 0) {  // means UR has been calibrated
-    if (XYZ->isCalibrated()) {
+    if (xyz_calib->isCalibrated()) {
       isDHCalibrated_ = true;  // set entire mechanisms as calibrated
     }
   }
   return ret;
 }
 
-int XYZ_UR::GenerateOriginMeasures(const EigenDRef<Eigen::MatrixXd> &jnt_in,
+int XyzUrCalib::GenerateOriginMeasures(const EigenDRef<Eigen::MatrixXd> &jnt_in,
                                    const int numPtsInPlanes,
                                    EigenDRef<Eigen::MatrixXd> *jnt_out) {
   std::ostringstream strs;
@@ -1467,8 +1467,8 @@ int XYZ_UR::GenerateOriginMeasures(const EigenDRef<Eigen::MatrixXd> &jnt_in,
 
   // first of all, using first plane to compute the relative coordinates
   Eigen::MatrixXd relPt(numRows, numPtsInPlanes);
-  size_t xyz_dof = XYZ->GetDoF();
-  size_t ur_dof = UR->GetDoF();
+  size_t xyz_dof = xyz_calib->GetDoF();
+  size_t ur_dof = ur_calib->GetDoF();
   // grab the first 4 ur_jnts and xyz_jnts
   Eigen::MatrixXd ur_jnts = jnt_in.block(xyz_dof, 0, ur_dof, numPtsInPlanes);
   Eigen::VectorXd jnt_ur_eig = ur_jnts.col(0);
@@ -1480,10 +1480,10 @@ int XYZ_UR::GenerateOriginMeasures(const EigenDRef<Eigen::MatrixXd> &jnt_in,
 
   Pose ps_ur, ps_xyz;
   // set as using calibrated models
-  XYZ->SetUsingCalibratedModel(true);
-  UR->SetUsingCalibratedModel(true);
+  xyz_calib->SetUsingCalibratedModel(true);
+  ur_calib->SetUsingCalibratedModel(true);
   // compute the first flange frame
-  int ret = UR->JntToCart(jnt_ur, &ps_ur);
+  int ret = ur_calib->JntToCart(jnt_ur, &ps_ur);
   if (ret < 0) {
     strs.str("");
     strs << GetName() << ":"
@@ -1502,7 +1502,7 @@ int XYZ_UR::GenerateOriginMeasures(const EigenDRef<Eigen::MatrixXd> &jnt_in,
   for (size_t i = 0; i < numPtsInPlanes; i++) {
     jnt_xyz_eig = xyz_jnts.col(i);
     EigenVec2StdVec(jnt_xyz_eig, &jnt_xyz);
-    ret = XYZ->JntToCart(jnt_xyz, &ps_xyz);
+    ret = xyz_calib->JntToCart(jnt_xyz, &ps_xyz);
     if (ret < 0) {
       strs.str("");
       strs << GetName() << ":"
@@ -1534,7 +1534,7 @@ int XYZ_UR::GenerateOriginMeasures(const EigenDRef<Eigen::MatrixXd> &jnt_in,
     jnt_ur_eig = ur_jnts.col(0);
     EigenVec2StdVec(jnt_ur_eig, &jnt_ur);
     // using calibrated model to compute the ideal UR pose
-    ret = UR->JntToCart(jnt_ur, &ps_ur);
+    ret = ur_calib->JntToCart(jnt_ur, &ps_ur);
     if (ret < 0) {
       strs.str("");
       strs << GetName() << " FK error, code  " << ret << ", jnt is "
@@ -1559,7 +1559,7 @@ int XYZ_UR::GenerateOriginMeasures(const EigenDRef<Eigen::MatrixXd> &jnt_in,
     rf_pose_UR_orig.getBranchFlags(&UR_flags_cal);
     rf_pose_UR_orig.getJointTurns(&UR_turns_cal);
 
-    // Eigen::VectorXd  d_UR_j_traj(UR->GetDoF()), md_UR_j_traj(UR->GetDoF());
+    // Eigen::VectorXd  d_UR_j_traj(ur_calib->GetDoF()), md_UR_j_traj(ur_calib->GetDoF());
     // StdVec2EigenVec(jnt_ur, &d_UR_j_traj); // compensated joint traj
     // StdVec2EigenVec(jnt_ur, &md_UR_j_traj); // compensated joint traj
 
@@ -1580,7 +1580,7 @@ int XYZ_UR::GenerateOriginMeasures(const EigenDRef<Eigen::MatrixXd> &jnt_in,
       Vec v1(jnt_xyz_eig);
       Frame d_traj_fm;
       d_traj_fm.setTranslation(v1);
-      std::vector<int> ikXYZTurns(XYZ->GetDoF(), 0);
+      std::vector<int> ikXYZTurns(xyz_calib->GetDoF(), 0);
       std::vector<int> branchXYZ(3, 0);
       std::vector<int> XYZURTurns_orig, XYZURTurns_cal;
       XYZURTurns_orig.insert(XYZURTurns_orig.end(), ikXYZTurns.begin(),
@@ -1598,15 +1598,15 @@ int XYZ_UR::GenerateOriginMeasures(const EigenDRef<Eigen::MatrixXd> &jnt_in,
       // block base
       Pose mdPose, aPose;
       // ideal uncompensated xyz traj / compensated xyz traj
-      Eigen::VectorXd d_XYZ_j_traj(XYZ->GetDoF());
-      Eigen::VectorXd md_XYZ_j_traj(XYZ->GetDoF());
+      Eigen::VectorXd d_XYZ_j_traj(xyz_calib->GetDoF());
+      Eigen::VectorXd md_XYZ_j_traj(xyz_calib->GetDoF());
 
-      // step 2: call XYZ->CompSateEachPt (to be done in serialArm.cpp)
-      ret = XYZ->ErrCompensationDH(calibBase, origBase, Frame(), dPose, &mdPose,
+      // step 2: call xyz_calib->CompSateEachPt (to be done in serialArm.cpp)
+      ret = xyz_calib->ErrCompensationDH(calibBase, origBase, Frame(), dPose, &mdPose,
                                    &d_XYZ_j_traj, &md_XYZ_j_traj, &aPose);
       if (ret < 0) {
         strs.str("");
-        strs << GetName() << " XYZ->ErrCompensationDH error  " << ret
+        strs << GetName() << " xyz_calib->ErrCompensationDH error  " << ret
              << ", cart is " << dPose.ToString(true) << __FUNCTION__
              << ", line " << __LINE__ << std::endl;
         LOG_ERROR(strs);
@@ -1641,7 +1641,7 @@ int XYZ_UR::GenerateOriginMeasures(const EigenDRef<Eigen::MatrixXd> &jnt_in,
   return 0;
 }
 
-int XYZ_UR::GenerateOriginMeasures(const Eigen::MatrixXd &jnt_in,
+int XyzUrCalib::GenerateOriginMeasures(const Eigen::MatrixXd &jnt_in,
                                    const int numPtsInPlanes,
                                    Eigen::MatrixXd *jnt_out) {
   std::ostringstream strs;
@@ -1669,8 +1669,8 @@ int XYZ_UR::GenerateOriginMeasures(const Eigen::MatrixXd &jnt_in,
 
   // first of all, using first plane to compute the relative coordinates
   Eigen::MatrixXd relPt(numRows, numPtsInPlanes);
-  size_t xyz_dof = XYZ->GetDoF();
-  size_t ur_dof = UR->GetDoF();
+  size_t xyz_dof = xyz_calib->GetDoF();
+  size_t ur_dof = ur_calib->GetDoF();
   // grab the first 4 ur_jnts and xyz_jnts
   Eigen::MatrixXd ur_jnts = jnt_in.block(xyz_dof, 0, ur_dof, numPtsInPlanes);
   Eigen::VectorXd jnt_ur_eig = ur_jnts.col(0);
@@ -1682,10 +1682,10 @@ int XYZ_UR::GenerateOriginMeasures(const Eigen::MatrixXd &jnt_in,
 
   Pose ps_ur, ps_xyz;
   // set as using calibrated models
-  XYZ->SetUsingCalibratedModel(true);
-  UR->SetUsingCalibratedModel(true);
+  xyz_calib->SetUsingCalibratedModel(true);
+  ur_calib->SetUsingCalibratedModel(true);
   // compute the first flange frame
-  int ret = UR->JntToCart(jnt_ur, &ps_ur);
+  int ret = ur_calib->JntToCart(jnt_ur, &ps_ur);
   if (ret < 0) {
     strs.str("");
     strs << GetName() << ":"
@@ -1704,7 +1704,7 @@ int XYZ_UR::GenerateOriginMeasures(const Eigen::MatrixXd &jnt_in,
   for (size_t i = 0; i < numPtsInPlanes; i++) {
     jnt_xyz_eig = xyz_jnts.col(i);
     EigenVec2StdVec(jnt_xyz_eig, &jnt_xyz);
-    ret = XYZ->JntToCart(jnt_xyz, &ps_xyz);
+    ret = xyz_calib->JntToCart(jnt_xyz, &ps_xyz);
     if (ret < 0) {
       strs.str("");
       strs << GetName() << ":"
@@ -1734,7 +1734,7 @@ int XYZ_UR::GenerateOriginMeasures(const Eigen::MatrixXd &jnt_in,
     jnt_ur_eig = ur_jnts.col(0);
     EigenVec2StdVec(jnt_ur_eig, &jnt_ur);
     // using calibrated model to compute the ideal UR pose
-    ret = UR->JntToCart(jnt_ur, &ps_ur);
+    ret = ur_calib->JntToCart(jnt_ur, &ps_ur);
     if (ret < 0) {
       strs.str("");
       strs << GetName() << " FK error, code  " << ret << ", jnt is "
@@ -1759,7 +1759,7 @@ int XYZ_UR::GenerateOriginMeasures(const Eigen::MatrixXd &jnt_in,
     rf_pose_UR_orig.getBranchFlags(&UR_flags_cal);
     rf_pose_UR_orig.getJointTurns(&UR_turns_cal);
 
-    // Eigen::VectorXd  d_UR_j_traj(UR->GetDoF()), md_UR_j_traj(UR->GetDoF());
+    // Eigen::VectorXd  d_UR_j_traj(ur_calib->GetDoF()), md_UR_j_traj(ur_calib->GetDoF());
     // StdVec2EigenVec(jnt_ur, &d_UR_j_traj); // compensated joint traj
     // StdVec2EigenVec(jnt_ur, &md_UR_j_traj); // compensated joint traj
 
@@ -1780,7 +1780,7 @@ int XYZ_UR::GenerateOriginMeasures(const Eigen::MatrixXd &jnt_in,
       Vec v1(jnt_xyz_eig);
       Frame d_traj_fm;
       d_traj_fm.setTranslation(v1);
-      std::vector<int> ikXYZTurns(XYZ->GetDoF(), 0);
+      std::vector<int> ikXYZTurns(xyz_calib->GetDoF(), 0);
       std::vector<int> branchXYZ(3, 0);
       std::vector<int> XYZURTurns_orig, XYZURTurns_cal;
       XYZURTurns_orig.insert(XYZURTurns_orig.end(), ikXYZTurns.begin(),
@@ -1798,15 +1798,15 @@ int XYZ_UR::GenerateOriginMeasures(const Eigen::MatrixXd &jnt_in,
       // block base
       Pose mdPose, aPose;
       // ideal uncompensated xyz traj / compensated xyz traj
-      Eigen::VectorXd d_XYZ_j_traj(XYZ->GetDoF());
-      Eigen::VectorXd md_XYZ_j_traj(XYZ->GetDoF());
+      Eigen::VectorXd d_XYZ_j_traj(xyz_calib->GetDoF());
+      Eigen::VectorXd md_XYZ_j_traj(xyz_calib->GetDoF());
 
-      // step 2: call XYZ->CompSateEachPt (to be done in serialArm.cpp)
-      ret = XYZ->ErrCompensationDH(calibBase, origBase, Frame(), dPose, &mdPose,
+      // step 2: call xyz_calib->CompSateEachPt (to be done in serialArm.cpp)
+      ret = xyz_calib->ErrCompensationDH(calibBase, origBase, Frame(), dPose, &mdPose,
                                    &d_XYZ_j_traj, &md_XYZ_j_traj, &aPose);
       if (ret < 0) {
         strs.str("");
-        strs << GetName() << " XYZ->ErrCompensationDH error  " << ret
+        strs << GetName() << " xyz_calib->ErrCompensationDH error  " << ret
              << ", cart is " << dPose.ToString(true) << __FUNCTION__
              << ", line " << __LINE__ << std::endl;
         LOG_ERROR(strs);
@@ -1841,7 +1841,7 @@ int XYZ_UR::GenerateOriginMeasures(const Eigen::MatrixXd &jnt_in,
   return 0;
 }
 
-double XYZ_UR::LaserCalibrateOrientation(
+double XyzUrCalib::LaserCalibrateOrientation(
     const Eigen::MatrixXd &jnt_measure, const Eigen::MatrixXd &cart_measure,
     const Eigen::VectorXd &laserMat_z_measure,
     // const EigenDRef<Eigen::Vector3d> &init_normal,   // init normal vector
@@ -1891,7 +1891,7 @@ double XYZ_UR::LaserCalibrateOrientation(
     return -ERR_ROB_CALIB_MEASURE_DATA_WRONG_DIM;
   }
   size_t numPlanes = num_col_jnt / numPtsInEachPlane;
-  Eigen::MatrixXd UR_jnt_measure(UR->GetDoF(), numPlanes);
+  Eigen::MatrixXd UR_jnt_measure(ur_calib->GetDoF(), numPlanes);
   Eigen::MatrixXd UR_cart_measure(num_row_cart, numPtsInEachPlane * numPlanes);
 
   double laser0 = laser_value;
@@ -1899,7 +1899,7 @@ double XYZ_UR::LaserCalibrateOrientation(
   // Eigen::VectorXd   bi(numPlanes, 0);
   for (size_t i = 0; i < numPlanes; i++) {
     Eigen::MatrixXd jnts = jnt_measure.block(
-        XYZ->GetDoF(), i * numPtsInEachPlane, UR->GetDoF(), numPtsInEachPlane);
+        xyz_calib->GetDoF(), i * numPtsInEachPlane, ur_calib->GetDoF(), numPtsInEachPlane);
     Eigen::MatrixXd carts = cart_measure.block(0, i * numPtsInEachPlane,
                                                num_row_cart, numPtsInEachPlane);
     Eigen::MatrixXd laser =
@@ -1925,19 +1925,19 @@ double XYZ_UR::LaserCalibrateOrientation(
       cart(laser_channel) =
           cart(laser_channel) - laser_scale * (laser(j) - laser0);
       Eigen::VectorXd tmpJnt, tmpCart;
-      XYZ->SetUsingCalibratedModel(false);
-      if (!XYZ->GetJntFromPose(cart, &tmpJnt)) {
+      xyz_calib->SetUsingCalibratedModel(false);
+      if (!xyz_calib->GetJntFromPose(cart, &tmpJnt)) {
         strs.str("");
-        strs << "XYZ->GetJntFromPose error with cart=" << cart
+        strs << "xyz_calib->GetJntFromPose error with cart=" << cart
              << ", in function" << __FUNCTION__ << " at line " << __LINE__
              << std::endl;
         LOG_ERROR(strs);
         return -2002;
       }
-      XYZ->SetUsingCalibratedModel(true);
-      if (!XYZ->GetPoseFromJnt(tmpJnt, &cart)) {
+      xyz_calib->SetUsingCalibratedModel(true);
+      if (!xyz_calib->GetPoseFromJnt(tmpJnt, &cart)) {
         strs.str("");
-        strs << "XYZ->GetPoseFromJnt error with jnt=" << tmpJnt
+        strs << "xyz_calib->GetPoseFromJnt error with jnt=" << tmpJnt
              << ", in function" << __FUNCTION__ << " at line " << __LINE__
              << std::endl;
         LOG_ERROR(strs);
@@ -1947,20 +1947,20 @@ double XYZ_UR::LaserCalibrateOrientation(
     }
   }
 
-  XYZ->SetUsingCalibratedModel(false);  // reset into uncalibrated mode
-  double ret = UR->LaserCalibrateOrientation(
+  xyz_calib->SetUsingCalibratedModel(false);  // reset into uncalibrated mode
+  double ret = ur_calib->LaserCalibrateOrientation(
       UR_jnt_measure, UR_cart_measure, laserMat_z_measure, laser_channel,
       laser_scale, laser_value, max_laser_dist, numPtsInEachPlane,
       surfaceArrays);
   if (ret >= 0) {  // means UR has been calibrated
-    if (XYZ->isCalibrated()) {
+    if (xyz_calib->isCalibrated()) {
       isDHCalibrated_ = true;  // set entire mechanisms as calibrated
     }
   }
   return ret;
 }
 
-double XYZ_UR::CalibrateLaserOrigin(
+double XyzUrCalib::CalibrateLaserOrigin(
     // jnt measure matrix  j1 / j2 /j3 /j4 /j5
     const EigenDRef<Eigen::MatrixXd> &jnt_measure,
     // cart     x/y/z/Orient, |p1, p2, p3, p4| for A1  |p5, p6, p7, p8| for A1'
@@ -2043,7 +2043,7 @@ double XYZ_UR::CalibrateLaserOrigin(
     Eigen::VectorXd bb(numPlanes);
 
     Eigen::VectorXd UR_jnt;
-    UR->SetUsingCalibratedModel(true);
+    ur_calib->SetUsingCalibratedModel(true);
     Eigen::Vector3d dv1, dv2, cN, cN1, cN2, cN3;
     std::vector<Eigen::Vector3d> pp(numPtsInEachOrientPlane);
     for (size_t i = 0; i < numPlanes; i++) {
@@ -2053,10 +2053,10 @@ double XYZ_UR::CalibrateLaserOrigin(
       Eigen::MatrixXd laser = laserMat_z_measure.segment(
           i * numPtsInEachOrientPlane, numPtsInEachOrientPlane);
       Eigen::MatrixXd jnts =
-          jnt_measure.block(XYZ->GetDoF(), i * numPtsInEachOrientPlane,
-                            UR->GetDoF(), numPtsInEachOrientPlane);
+          jnt_measure.block(xyz_calib->GetDoF(), i * numPtsInEachOrientPlane,
+                            ur_calib->GetDoF(), numPtsInEachOrientPlane);
       Eigen::MatrixXd jntxyz =
-          jnt_measure.block(0, i * numPtsInEachOrientPlane, XYZ->GetDoF(),
+          jnt_measure.block(0, i * numPtsInEachOrientPlane, xyz_calib->GetDoF(),
                             numPtsInEachOrientPlane);
       UR_jnt = jnts.rowwise().mean();  // jnts.col(0);
       // first check if all jnts are same for half points in the plane
@@ -2087,10 +2087,10 @@ double XYZ_UR::CalibrateLaserOrigin(
                            laser_length);  // make sure laser light length = 0
         strs.str("");
         Eigen::VectorXd tmpJnt;
-        XYZ->SetUsingCalibratedModel(false);
-        if (!XYZ->GetJntFromPose(cart, &tmpJnt)) {
+        xyz_calib->SetUsingCalibratedModel(false);
+        if (!xyz_calib->GetJntFromPose(cart, &tmpJnt)) {
           strs.str("");
-          strs << "XYZ->GetJntFromPose error with cart=" << cart
+          strs << "xyz_calib->GetJntFromPose error with cart=" << cart
                << ", in function" << __FUNCTION__ << " at line " << __LINE__
                << std::endl;
           LOG_ERROR(strs);
@@ -2099,10 +2099,10 @@ double XYZ_UR::CalibrateLaserOrigin(
         strs << "xyzjnt=" << jntxyz.col(j)
              << ", original cart=" << cart.segment(0, 3)
              << ", tmpJnt=" << tmpJnt << std::endl;
-        XYZ->SetUsingCalibratedModel(true);
-        if (!XYZ->GetPoseFromJnt(tmpJnt, &cart)) {
+        xyz_calib->SetUsingCalibratedModel(true);
+        if (!xyz_calib->GetPoseFromJnt(tmpJnt, &cart)) {
           strs.str("");
-          strs << "XYZ->GetPoseFromJnt error with jnt=" << tmpJnt
+          strs << "xyz_calib->GetPoseFromJnt error with jnt=" << tmpJnt
                << ", in function" << __FUNCTION__ << " at line " << __LINE__
                << std::endl;
           LOG_ERROR(strs);
@@ -2168,9 +2168,9 @@ double XYZ_UR::CalibrateLaserOrigin(
       Frame fm2;
       Eigen::VectorXd ur_jnt_vec;
       EigenVec2StdVec(UR_jnt, &ur_jnt_vec);
-      if (!UR->GetDHFrame(ur_jnt_vec, 0, &fm2)) {
+      if (!ur_calib->GetDHFrame(ur_jnt_vec, 0, &fm2)) {
         strs.str("");
-        strs << GetName() << "UR->GetDHFrame error with jnt=" << UR_jnt
+        strs << GetName() << "ur_calib->GetDHFrame error with jnt=" << UR_jnt
              << ", at index 1"
              << ", in function" << __FUNCTION__ << " at line " << __LINE__
              << std::endl;
@@ -2252,8 +2252,8 @@ double XYZ_UR::CalibrateLaserOrigin(
       Eigen::MatrixXd laser = laserMat_z_measure.segment(
           i * numPtsInEachOrientPlane, numPtsInEachOrientPlane);
       Eigen::MatrixXd jnts =
-          jnt_measure.block(XYZ->GetDoF(), i * numPtsInEachOrientPlane,
-                            UR->GetDoF(), numPtsInEachOrientPlane);
+          jnt_measure.block(xyz_calib->GetDoF(), i * numPtsInEachOrientPlane,
+                            ur_calib->GetDoF(), numPtsInEachOrientPlane);
       UR_jnt = jnts.rowwise().mean();  // jnts.col(0);
       // modify the cart so that they are in the same with same z value
       // compute the first corner of plane 1
@@ -2267,19 +2267,19 @@ double XYZ_UR::CalibrateLaserOrigin(
                            laser_length);  // make sure laser light length = 0
 
         Eigen::VectorXd tmpJnt;
-        XYZ->SetUsingCalibratedModel(false);
-        if (!XYZ->GetJntFromPose(cart, &tmpJnt)) {
+        xyz_calib->SetUsingCalibratedModel(false);
+        if (!xyz_calib->GetJntFromPose(cart, &tmpJnt)) {
           strs.str("");
-          strs << "XYZ->GetJntFromPose error with cart=" << cart
+          strs << "xyz_calib->GetJntFromPose error with cart=" << cart
                << ", in function" << __FUNCTION__ << " at line " << __LINE__
                << std::endl;
           LOG_ERROR(strs);
           return -2002;
         }
-        XYZ->SetUsingCalibratedModel(true);
-        if (!XYZ->GetPoseFromJnt(tmpJnt, &cart)) {
+        xyz_calib->SetUsingCalibratedModel(true);
+        if (!xyz_calib->GetPoseFromJnt(tmpJnt, &cart)) {
           strs.str("");
-          strs << "XYZ->GetPoseFromJnt error with jnt=" << tmpJnt
+          strs << "xyz_calib->GetPoseFromJnt error with jnt=" << tmpJnt
                << ", in function" << __FUNCTION__ << " at line " << __LINE__
                << std::endl;
           LOG_ERROR(strs);
@@ -2335,9 +2335,9 @@ double XYZ_UR::CalibrateLaserOrigin(
       Frame fm2;
       Eigen::VectorXd ur_jnt_vec;
       EigenVec2StdVec(UR_jnt, &ur_jnt_vec);
-      if (!UR->GetDHFrame(ur_jnt_vec, 0, &fm2)) {
+      if (!ur_calib->GetDHFrame(ur_jnt_vec, 0, &fm2)) {
         strs.str("");
-        strs << GetName() << "UR->GetDHFrame error with jnt=" << UR_jnt
+        strs << GetName() << "ur_calib->GetDHFrame error with jnt=" << UR_jnt
              << ", at index 1"
              << ", in function" << __FUNCTION__ << " at line " << __LINE__
              << std::endl;
@@ -2489,15 +2489,15 @@ double XYZ_UR::CalibrateLaserOrigin(
     util.WriteCSVFile(angleRUFile2, angleRU2);
 
     Eigen::VectorXd urDH;
-    UR->GetCalibParamSet(&urDH);
+    ur_calib->GetCalibParamSet(&urDH);
     urDH(3) = a1;  // alpha0, alpha1, a0, a1, t0, t1, d0, d1, b0, b1
     // urDH(7) = d1;
     Eigen::VectorXd urDHVec;
     EigenVec2StdVec(urDH, &urDHVec);
-    UR->LoadCalibParamSet(urDHVec);  // update calibrated DH parameter
+    ur_calib->LoadCalibParamSet(urDHVec);  // update calibrated DH parameter
 
     Frame tmp_baseoff, tmp_subbaseoff;
-    UR->GetDefaultBaseOffFrame(&tmp_baseoff, &tmp_subbaseoff);
+    ur_calib->GetDefaultBaseOffFrame(&tmp_baseoff, &tmp_subbaseoff);
 
     // now UR mechanism set translational part of baseOffset
     // Frame tmpBase = sub_defaultBaseOff_;
@@ -2514,7 +2514,7 @@ double XYZ_UR::CalibrateLaserOrigin(
          << tmp_baseoff.ToString(true)
          << ", in eigen vector=" << tmpBaseVec.transpose() << std::endl;
     LOG_INFO(strs);
-    UR->SetDefaultBaseOff(tmpBaseVec,
+    ur_calib->SetDefaultBaseOff(tmpBaseVec,
                           tmpBaseVec);  // modify the default base of UR obj
 
     // Vec t1(tmp_baseoff.segment(0,3));
@@ -2529,8 +2529,8 @@ double XYZ_UR::CalibrateLaserOrigin(
          << std::endl;
     LOG_INFO(strs);
 
-    UR->updateCalibrateStatus(true);
-    if (XYZ->isCalibrated()) {
+    ur_calib->updateCalibrateStatus(true);
+    if (xyz_calib->isCalibrated()) {
       isDHCalibrated_ = true;  // set entire mechanism is calibrated
     }
 
@@ -2546,7 +2546,7 @@ double XYZ_UR::CalibrateLaserOrigin(
   }
 }
 
-double XYZ_UR::LaserCalibrateOrigin(
+double XyzUrCalib::LaserCalibrateOrigin(
     // jnt measure matrix  j1 / j2 /j3 /j4 /j5
     const Eigen::MatrixXd &jnt_measure,
     // cart     x/y/z/Orient, |p1, p2, p3, p4| for A1  |p5, p6, p7, p8| for A1'
@@ -2630,7 +2630,7 @@ double XYZ_UR::LaserCalibrateOrigin(
     Eigen::VectorXd bb(numPlanes);
 
     Eigen::VectorXd UR_jnt;
-    UR->SetUsingCalibratedModel(true);
+    ur_calib->SetUsingCalibratedModel(true);
     Eigen::Vector3d dv1, dv2, cN, cN1, cN2, cN3;
     std::vector<Eigen::Vector3d> pp(numPtsInEachOrientPlane);
     for (size_t i = 0; i < numPlanes; i++) {
@@ -2640,10 +2640,10 @@ double XYZ_UR::LaserCalibrateOrigin(
       Eigen::MatrixXd laser = laserMat_z_measure.segment(
           i * numPtsInEachOrientPlane, numPtsInEachOrientPlane);
       Eigen::MatrixXd jnts =
-          jnt_measure.block(XYZ->GetDoF(), i * numPtsInEachOrientPlane,
-                            UR->GetDoF(), numPtsInEachOrientPlane);
+          jnt_measure.block(xyz_calib->GetDoF(), i * numPtsInEachOrientPlane,
+                            ur_calib->GetDoF(), numPtsInEachOrientPlane);
       Eigen::MatrixXd jntxyz =
-          jnt_measure.block(0, i * numPtsInEachOrientPlane, XYZ->GetDoF(),
+          jnt_measure.block(0, i * numPtsInEachOrientPlane, xyz_calib->GetDoF(),
                             numPtsInEachOrientPlane);
       UR_jnt = jnts.rowwise().mean();  // UR_jnt = jnts.col(0);
       // first check if all jnts are same for half points in the plane
@@ -2674,10 +2674,10 @@ double XYZ_UR::LaserCalibrateOrigin(
                            laser_length);  // make sure laser light length = 0
         strs.str("");
         Eigen::VectorXd tmpJnt;
-        XYZ->SetUsingCalibratedModel(false);
-        if (!XYZ->GetJntFromPose(cart, &tmpJnt)) {
+        xyz_calib->SetUsingCalibratedModel(false);
+        if (!xyz_calib->GetJntFromPose(cart, &tmpJnt)) {
           strs.str("");
-          strs << "XYZ->GetJntFromPose error with cart=" << cart
+          strs << "xyz_calib->GetJntFromPose error with cart=" << cart
                << ", in function" << __FUNCTION__ << " at line " << __LINE__
                << std::endl;
           LOG_ERROR(strs);
@@ -2686,10 +2686,10 @@ double XYZ_UR::LaserCalibrateOrigin(
         strs << "xyzjnt=" << jntxyz.col(j)
              << ", original cart=" << cart.segment(0, 3)
              << ", tmpJnt=" << tmpJnt << std::endl;
-        XYZ->SetUsingCalibratedModel(true);
-        if (!XYZ->GetPoseFromJnt(tmpJnt, &cart)) {
+        xyz_calib->SetUsingCalibratedModel(true);
+        if (!xyz_calib->GetPoseFromJnt(tmpJnt, &cart)) {
           strs.str("");
-          strs << "XYZ->GetPoseFromJnt error with jnt=" << tmpJnt
+          strs << "xyz_calib->GetPoseFromJnt error with jnt=" << tmpJnt
                << ", in function" << __FUNCTION__ << " at line " << __LINE__
                << std::endl;
           LOG_ERROR(strs);
@@ -2756,9 +2756,9 @@ double XYZ_UR::LaserCalibrateOrigin(
       Frame fm2;
       Eigen::VectorXd ur_jnt_vec;
       EigenVec2StdVec(UR_jnt, &ur_jnt_vec);
-      if (!UR->GetDHFrame(ur_jnt_vec, 0, &fm2)) {
+      if (!ur_calib->GetDHFrame(ur_jnt_vec, 0, &fm2)) {
         strs.str("");
-        strs << GetName() << "UR->GetDHFrame error with jnt=" << UR_jnt
+        strs << GetName() << "ur_calib->GetDHFrame error with jnt=" << UR_jnt
              << ", at index 1"
              << ", in function" << __FUNCTION__ << " at line " << __LINE__
              << std::endl;
@@ -2840,8 +2840,8 @@ double XYZ_UR::LaserCalibrateOrigin(
       Eigen::MatrixXd laser = laserMat_z_measure.segment(
           i * numPtsInEachOrientPlane, numPtsInEachOrientPlane);
       Eigen::MatrixXd jnts =
-          jnt_measure.block(XYZ->GetDoF(), i * numPtsInEachOrientPlane,
-                            UR->GetDoF(), numPtsInEachOrientPlane);
+          jnt_measure.block(xyz_calib->GetDoF(), i * numPtsInEachOrientPlane,
+                            ur_calib->GetDoF(), numPtsInEachOrientPlane);
       UR_jnt = jnts.rowwise().mean();  // UR_jnt = jnts.col(0);
       // modify the cart so that they are in the same with same z value
       // compute the first corner of plane 1
@@ -2855,19 +2855,19 @@ double XYZ_UR::LaserCalibrateOrigin(
                            laser_length);  // make sure laser light length = 0
 
         Eigen::VectorXd tmpJnt;
-        XYZ->SetUsingCalibratedModel(false);
-        if (!XYZ->GetJntFromPose(cart, &tmpJnt)) {
+        xyz_calib->SetUsingCalibratedModel(false);
+        if (!xyz_calib->GetJntFromPose(cart, &tmpJnt)) {
           strs.str("");
-          strs << "XYZ->GetJntFromPose error with cart=" << cart
+          strs << "xyz_calib->GetJntFromPose error with cart=" << cart
                << ", in function" << __FUNCTION__ << " at line " << __LINE__
                << std::endl;
           LOG_ERROR(strs);
           return -2002;
         }
-        XYZ->SetUsingCalibratedModel(true);
-        if (!XYZ->GetPoseFromJnt(tmpJnt, &cart)) {
+        xyz_calib->SetUsingCalibratedModel(true);
+        if (!xyz_calib->GetPoseFromJnt(tmpJnt, &cart)) {
           strs.str("");
-          strs << "XYZ->GetPoseFromJnt error with jnt=" << tmpJnt
+          strs << "xyz_calib->GetPoseFromJnt error with jnt=" << tmpJnt
                << ", in function" << __FUNCTION__ << " at line " << __LINE__
                << std::endl;
           LOG_ERROR(strs);
@@ -2923,9 +2923,9 @@ double XYZ_UR::LaserCalibrateOrigin(
       Frame fm2;
       Eigen::VectorXd ur_jnt_vec;
       EigenVec2StdVec(UR_jnt, &ur_jnt_vec);
-      if (!UR->GetDHFrame(ur_jnt_vec, 0, &fm2)) {
+      if (!ur_calib->GetDHFrame(ur_jnt_vec, 0, &fm2)) {
         strs.str("");
-        strs << GetName() << "UR->GetDHFrame error with jnt=" << UR_jnt
+        strs << GetName() << "ur_calib->GetDHFrame error with jnt=" << UR_jnt
              << ", at index 1"
              << ", in function" << __FUNCTION__ << " at line " << __LINE__
              << std::endl;
@@ -3076,15 +3076,15 @@ double XYZ_UR::LaserCalibrateOrigin(
     util.WriteCSVFile(angleRUFile2, angleRU2);
 
     Eigen::VectorXd urDH;
-    UR->GetCalibParamSet(&urDH);
+    ur_calib->GetCalibParamSet(&urDH);
     urDH(3) = a1;  // alpha0, alpha1, a0, a1, t0, t1, d0, d1, b0, b1
     // urDH(7) = d1;
     Eigen::VectorXd urDHVec;
     EigenVec2StdVec(urDH, &urDHVec);
-    UR->LoadCalibParamSet(urDHVec);  // update calibrated DH parameter
+    ur_calib->LoadCalibParamSet(urDHVec);  // update calibrated DH parameter
 
     Frame tmp_baseoff, tmp_subbaseoff;
-    UR->GetDefaultBaseOffFrame(&tmp_baseoff, &tmp_subbaseoff);
+    ur_calib->GetDefaultBaseOffFrame(&tmp_baseoff, &tmp_subbaseoff);
 
     // now UR mechanism set translational part of baseOffset
     // Frame tmpBase = sub_defaultBaseOff_;
@@ -3101,7 +3101,7 @@ double XYZ_UR::LaserCalibrateOrigin(
          << tmp_baseoff.ToString(true)
          << ", in eigen vector=" << tmpBaseVec.transpose() << std::endl;
     LOG_INFO(strs);
-    UR->SetDefaultBaseOff(tmpBaseVec,
+    ur_calib->SetDefaultBaseOff(tmpBaseVec,
                           tmpBaseVec);  // modify the default base of UR obj
 
     // Vec t1(tmp_baseoff.segment(0,3));
@@ -3116,8 +3116,8 @@ double XYZ_UR::LaserCalibrateOrigin(
          << std::endl;
     LOG_INFO(strs);
 
-    UR->updateCalibrateStatus(true);
-    if (XYZ->isCalibrated()) {
+    ur_calib->updateCalibrateStatus(true);
+    if (xyz_calib->isCalibrated()) {
       isDHCalibrated_ = true;  // set entire mechanism is calibrated
     }
     // sub_defaultBaseOff_ = tmpBase;  // modify the default subBase of XYZ_UR
@@ -3132,7 +3132,7 @@ double XYZ_UR::LaserCalibrateOrigin(
   }
 }
 
-void XYZ_UR::SetDefaultBaseOff(const EigenDRef<Eigen::VectorXd> &baseoff,
+void XyzUrCalib::SetDefaultBaseOff(const EigenDRef<Eigen::VectorXd> &baseoff,
                                const EigenDRef<Eigen::VectorXd> &subbaseoff) {
   std::ostringstream strs;
   if (!initialized_) {
@@ -3144,12 +3144,12 @@ void XYZ_UR::SetDefaultBaseOff(const EigenDRef<Eigen::VectorXd> &baseoff,
     LOG_ERROR(strs);
     return;
   }
-  UR->SetDefaultBaseOff(subbaseoff, subbaseoff);
+  ur_calib->SetDefaultBaseOff(subbaseoff, subbaseoff);
   strs.str("");
   strs << GetName() << ": UR Set defaultBaesoff=" << subbaseoff.transpose()
        << std::endl;
 
-  XYZ->SetDefaultBaseOff(baseoff, baseoff);
+  xyz_calib->SetDefaultBaseOff(baseoff, baseoff);
   strs.str("");
   strs << GetName() << ": XYZ Set defaultBaesoff=" << baseoff.transpose()
        << std::endl;
@@ -3157,7 +3157,7 @@ void XYZ_UR::SetDefaultBaseOff(const EigenDRef<Eigen::VectorXd> &baseoff,
   BaseKinematicMap::SetDefaultBaseOff(baseoff, subbaseoff);
 }
 
-void XYZ_UR::SetDefaultBaseOff(const Eigen::VectorXd &baseoff,
+void XyzUrCalib::SetDefaultBaseOff(const Eigen::VectorXd &baseoff,
                                const Eigen::VectorXd &subbaseoff) {
   std::ostringstream strs;
   if (!initialized_) {
@@ -3169,12 +3169,12 @@ void XYZ_UR::SetDefaultBaseOff(const Eigen::VectorXd &baseoff,
     LOG_ERROR(strs);
     return;
   }
-  UR->SetDefaultBaseOff(subbaseoff, subbaseoff);
+  ur_calib->SetDefaultBaseOff(subbaseoff, subbaseoff);
   strs.str("");
   strs << GetName() << ": UR Set defaultBaesoff=" << subbaseoff.transpose()
        << std::endl;
 
-  XYZ->SetDefaultBaseOff(baseoff, baseoff);
+  xyz_calib->SetDefaultBaseOff(baseoff, baseoff);
   strs.str("");
   strs << GetName() << ": XYZ Set defaultBaesoff=" << baseoff.transpose()
        << std::endl;
@@ -3182,7 +3182,7 @@ void XYZ_UR::SetDefaultBaseOff(const Eigen::VectorXd &baseoff,
   BaseKinematicMap::SetDefaultBaseOff(baseoff, subbaseoff);
 }
 
-void XYZ_UR::GetDefaultBaseOff(EigenDRef<Eigen::VectorXd> *baseoff,
+void XyzUrCalib::GetDefaultBaseOff(EigenDRef<Eigen::VectorXd> *baseoff,
                                EigenDRef<Eigen::VectorXd> *subbaseoff) {
   std::ostringstream strs;
   if (!initialized_) {
@@ -3195,9 +3195,9 @@ void XYZ_UR::GetDefaultBaseOff(EigenDRef<Eigen::VectorXd> *baseoff,
     return;
   }
   Eigen::VectorXd tmp_baseoff, tmp_subbaseoff;
-  XYZ->GetDefaultBaseOff(baseoff, subbaseoff);
+  xyz_calib->GetDefaultBaseOff(baseoff, subbaseoff);
   tmp_baseoff = *baseoff;
-  UR->GetDefaultBaseOff(baseoff, subbaseoff);
+  ur_calib->GetDefaultBaseOff(baseoff, subbaseoff);
   tmp_subbaseoff = *baseoff;
   *baseoff = tmp_baseoff;
   *subbaseoff = tmp_subbaseoff;
@@ -3207,7 +3207,7 @@ void XYZ_UR::GetDefaultBaseOff(EigenDRef<Eigen::VectorXd> *baseoff,
   LOG_INFO(strs);
 }
 
-int XYZ_UR::SetDependJacobianColumns(const std::vector<size_t> &d_cols) {
+int XyzUrCalib::SetDependJacobianColumns(const std::vector<size_t> &d_cols) {
   std::ostringstream strs;
   if (!initialized_) {
     strs.str("");
@@ -3224,13 +3224,13 @@ int XYZ_UR::SetDependJacobianColumns(const std::vector<size_t> &d_cols) {
     size_t col = d_cols[i];
     if (col < 6) {  // base
       d_col_base.push_back(col);
-    } else if (col < 6 + XYZ->GetDoF() * 5) {
+    } else if (col < 6 + xyz_calib->GetDoF() * 5) {
       d_col_XYZ.push_back(col);
     } else if (col < 6 + DoF_ * 5) {
-      d_col_UR.push_back(col - XYZ->GetDoF() * 5);
+      d_col_UR.push_back(col - xyz_calib->GetDoF() * 5);
     } else {
-      d_col_matA_XYZ.push_back(col - UR->GetDoF() * 5);
-      d_col_matA_UR.push_back(col - XYZ->GetDoF() * 5);
+      d_col_matA_XYZ.push_back(col - ur_calib->GetDoF() * 5);
+      d_col_matA_UR.push_back(col - xyz_calib->GetDoF() * 5);
     }
   }
 
@@ -3261,12 +3261,12 @@ int XYZ_UR::SetDependJacobianColumns(const std::vector<size_t> &d_cols) {
   strs << std::endl;
   LOG_INFO(strs);
   */
-  XYZ->SetDependJacobianColumns(d_XYZ);
-  UR->SetDependJacobianColumns(d_UR);
+  xyz_calib->SetDependJacobianColumns(d_XYZ);
+  ur_calib->SetDependJacobianColumns(d_UR);
   return 0;
 }
 
-bool XYZ_UR::GetCalibParamSet(EigenDRef<Eigen::VectorXd> *cal_DH) {
+bool XyzUrCalib::GetCalibParamSet(EigenDRef<Eigen::VectorXd> *cal_DH) {
   std::ostringstream strs;
   if (!initialized_) {
     strs.str("");
@@ -3276,14 +3276,14 @@ bool XYZ_UR::GetCalibParamSet(EigenDRef<Eigen::VectorXd> *cal_DH) {
     LOG_ERROR(strs);
     return false;
   }
-  size_t dof_XYZ = XYZ->GetDoF();
-  size_t dof_UR = UR->GetDoF();
+  size_t dof_XYZ = xyz_calib->GetDoF();
+  size_t dof_UR = ur_calib->GetDoF();
   Eigen::VectorXd cal_DH_XYZ(5 * dof_XYZ + 14);
   Eigen::VectorXd cal_DH_UR(5 * dof_UR + 14);
-  if (!XYZ->GetCalibParamSet(&cal_DH_XYZ)) {
+  if (!xyz_calib->GetCalibParamSet(&cal_DH_XYZ)) {
     return false;
   }
-  if (!UR->GetCalibParamSet(&cal_DH_UR)) {
+  if (!ur_calib->GetCalibParamSet(&cal_DH_UR)) {
     return false;
   }
   Eigen::VectorXd alpha(DoF_), a(DoF_), theta(DoF_), d(DoF_), beta(DoF_);
@@ -3330,7 +3330,7 @@ bool XYZ_UR::GetCalibParamSet(EigenDRef<Eigen::VectorXd> *cal_DH) {
   return true;
 }
 
-bool XYZ_UR::LoadCalibParamSet(const Eigen::VectorXd &kine_para) {
+bool XyzUrCalib::LoadCalibParamSet(const Eigen::VectorXd &kine_para) {
   std::ostringstream strs;
   if (!initialized_) {
     strs.str("");
@@ -3365,13 +3365,13 @@ bool XYZ_UR::LoadCalibParamSet(const Eigen::VectorXd &kine_para) {
   dh_UR.insert(dh_UR.end(), beta.begin() + 3, beta.end());
   dh_UR.insert(dh_UR.end(), kine_para.begin() + 5 * DoF_ + 7, kine_para.end());
   dh_UR.insert(dh_UR.end(), kine_para.begin() + 5 * DoF_ + 7, kine_para.end());
-  if (XYZ->LoadCalibParamSet(dh_XYZ) && UR->LoadCalibParamSet(dh_UR)) {
+  if (xyz_calib->LoadCalibParamSet(dh_XYZ) && ur_calib->LoadCalibParamSet(dh_UR)) {
     this->isDHCalibrated_ = true;
   }
   return true;
 }
 
-void XYZ_UR::SetUsingCalibratedModel(bool useCalibratedModel) {
+void XyzUrCalib::SetUsingCalibratedModel(bool useCalibratedModel) {
   std::ostringstream strs;
   if (!initialized_) {
     strs.str("");
@@ -3381,13 +3381,13 @@ void XYZ_UR::SetUsingCalibratedModel(bool useCalibratedModel) {
     LOG_ERROR(strs);
     return;
   }
-  XYZ->SetUsingCalibratedModel(useCalibratedModel);
-  UR->SetUsingCalibratedModel(useCalibratedModel);
+  xyz_calib->SetUsingCalibratedModel(useCalibratedModel);
+  ur_calib->SetUsingCalibratedModel(useCalibratedModel);
   useCalibrated_ = useCalibratedModel;
 }
 
 //! has robot been calibrated
-bool XYZ_UR::isCalibrated() {
+bool XyzUrCalib::isCalibrated() {
   std::ostringstream strs;
   if (!initialized_) {
     strs.str("");
@@ -3397,21 +3397,21 @@ bool XYZ_UR::isCalibrated() {
     LOG_ERROR(strs);
     return false;
   }
-  // std::cout << "XYZ clibrated: "  << XYZ->isCalibrated() << ", UR calibrated:
-  // " << UR->isCalibrated()  << std::endl; std::cout << GetName() << ":
+  // std::cout << "XYZ clibrated: "  << xyz_calib->isCalibrated() << ", UR calibrated:
+  // " << ur_calib->isCalibrated()  << std::endl; std::cout << GetName() << ":
   // isCalibrated() =" << isDHCalibrated_ << std::endl;
   return isDHCalibrated_;
 }
 
 //! is parameter initialized
-bool XYZ_UR::isInitialized() const {
+bool XyzUrCalib::isInitialized() const {
   if (!initialized_) {
     return false;
   }
-  return XYZ->isInitialized() && UR->isInitialized();
+  return xyz_calib->isInitialized() && ur_calib->isInitialized();
 }
 //! reset calibration model
-bool XYZ_UR::resetCalibration() {
+bool XyzUrCalib::resetCalibration() {
   std::ostringstream strs;
   if (!initialized_) {
     strs.str("");
@@ -3422,7 +3422,7 @@ bool XYZ_UR::resetCalibration() {
     return false;
   }
   isDHCalibrated_ = false;
-  return XYZ->resetCalibration() && UR->resetCalibration();
+  return xyz_calib->resetCalibration() && ur_calib->resetCalibration();
 }
 
 }  // namespace kinematics_lib

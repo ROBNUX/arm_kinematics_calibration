@@ -8,44 +8,10 @@
 namespace kinematics_lib {
 // separate-mode XYZ + UR
 class KINEMATICS_API XyzUrCalib : public BaseKinematicMap,
-                                  public BaseCalibratoin {
+                                  public BaseCalibration {
  public:
   XyzUrCalib();
 
-  XyzUrCalib(const Eigen::VectorXd& dh_UR, const Eigen::VectorXd& dh_XYZ);
-
-  int CartToJnt(const Pose& p, Eigen::VectorXd* q) override;
-
-  void SetGeometry(const Eigen::VectorXd& kine_para) override;
-
-  int JntToCart(const Eigen::VectorXd& q, Pose* p) override;
-
-  int JntToCart(const Eigen::VectorXd& q, const Eigen::VectorXd& qdot, Pose* p,
-                Twist* v) override;
-
-  int JntToCart(const Eigen::VectorXd& q, const Eigen::VectorXd& qdot,
-                const Eigen::VectorXd& qddot, Pose* p, Twist* v,
-                Twist* a) override {
-      return -1;
-  }
-
-  int CartToJnt(const Pose& p, const Twist& v, Eigen::VectorXd* q,
-                Eigen::VectorXd* qdot) override;
-
-  int CartToJnt(const Pose& p, const Twist& v, const Twist& a,
-                Eigen::VectorXd* q, Eigen::VectorXd* qdot,
-                Eigen::VectorXd* qddot) override {
-      return -1;
-  }
-
-  int CalcPassive(const Eigen::VectorXd& q, const Pose& p,
-                  Eigen::VectorXd* qpassive) override {
-    return 0;
-  }
-
-  int CalcJacobian(const Eigen::VectorXd& kine_para, Pose* p,
-                   Eigen::MatrixXd* Jp_t, Eigen::MatrixXd* Jp_r,
-                   const bool reduction = false);
 
   double LaserDistanceCalib(
       const Eigen::VectorXd& base_offset, const Eigen::VectorXd& tool_offset,
@@ -85,7 +51,7 @@ class KINEMATICS_API XyzUrCalib : public BaseKinematicMap,
                      EigenDRef<Eigen::VectorXd>* comp_base) override;
 
   int CpsCartPose(const refPose& p, const Eigen::VectorXd& canonicalBase,
-                  refPose* cp) = 0;
+                  refPose* cp) override;
 
   int CpsJnt(const refPose& p, Eigen::VectorXd* cq) override;
 
@@ -105,8 +71,6 @@ class KINEMATICS_API XyzUrCalib : public BaseKinematicMap,
                               const Eigen::MatrixXd& Jp_r,
                               Eigen::MatrixXd* Js_t1, Eigen::MatrixXd* Js_r1,
                               const bool reduction = false) override;
-
-  bool resetCalibration();
 
   std::string GetName() const { return std::string("XYZUR calib"); }
 
