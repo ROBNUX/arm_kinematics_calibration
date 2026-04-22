@@ -10,7 +10,7 @@ class COMMON_API RPE_Utility {
  public:
   RPE_Utility();
 
-  bool ReadCSVFile(const std::string fileName, Eigen::MatrixXd* data);
+  bool ReadCSVFile(const std::string fileName, Eigen::MatrixXd& data);
   bool WriteCSVFile(const std::string fileName, const Eigen::MatrixXd& data);
 };
 

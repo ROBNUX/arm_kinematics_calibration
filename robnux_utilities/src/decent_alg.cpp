@@ -47,7 +47,7 @@ bool DecentAlg::computeInvCond(const Eigen::MatrixXd& A, double& InvCond,
   return true;
 }
 
-void DecentAlg::removeColumn(Eigen::MatrixXd& matrix, unsigned int colToRemove) {
+void DecentAlg::RemoveColumn(Eigen::MatrixXd& matrix, unsigned int colToRemove) {
   size_t numRows = matrix.rows();
   size_t numCols = matrix.cols() - 1;
 
@@ -58,7 +58,7 @@ void DecentAlg::removeColumn(Eigen::MatrixXd& matrix, unsigned int colToRemove) 
   }
 }
 
-bool DecentAlg::reduceJacobian(const Eigen::MatrixXd& A1, Eigen::MatrixXd& A2,
+bool DecentAlg::ReduceJacobian(const Eigen::MatrixXd& A1, Eigen::MatrixXd& A2,
                          std::vector<int>& A2_indices,
                          std::vector<int>& d_indices) {
   std::ostringstream strs;
@@ -107,7 +107,7 @@ bool DecentAlg::reduceJacobian(const Eigen::MatrixXd& A1, Eigen::MatrixXd& A2,
     for (size_t i = 0; i < numCols; i++) {
       Eigen::MatrixXd B1 = B;
       Eigen::VectorXd vCol = B1.col(i);
-      removeColumn(B1, i);
+      RemoveColumn(B1, i);
 
       int rank;        // rank
       double iv_cond;  // inverse cond
@@ -199,7 +199,7 @@ bool DecentAlg::OptGradientVec(const Eigen::MatrixXd& A1,
   size_t numParam1;
   Eigen::MatrixXd A2;
   if (first_time_cond_opt_) {
-    if (!reduceJacobian(A1, A2, ind_indices_, d_indices_)) {
+    if (!ReduceJacobian(A1, A2, ind_indices_, d_indices_)) {
       strs.str("");
       strs << "reduce Jacobian based upon maximizing inv condition fails "
            << __FUNCTION__ << ", at line " << __LINE__ << std::endl;
@@ -214,8 +214,8 @@ bool DecentAlg::OptGradientVec(const Eigen::MatrixXd& A1,
     for (size_t i = 0; i < d_indices_.size(); i++) {
       // luckily, the vector of depend column indices in d_jacobian_cols_
       // are arranged from largest toward smallest, so we can continuously
-      // call removeColumn
-      removeColumn(A2, d_indices_[i]);
+      // call RemoveColumn
+      RemoveColumn(A2, d_indices_[i]);
     }
   }
 
@@ -298,7 +298,7 @@ bool DecentAlg::OptGradientVec(const Eigen::MatrixXd& A1,
   }
   para = delta_p_new;
   strs.str("");
-  strs << "grad offset at step " << t_ << " = " << *para << std::endl;
+  strs << "grad offset at step " << t_ << " = " << para << std::endl;
   t_++;
   LOG_INFO(strs);
   return true;

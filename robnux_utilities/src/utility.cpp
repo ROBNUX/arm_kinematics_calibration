@@ -11,14 +11,8 @@ RPE_Utility::RPE_Utility() {
 }
      
 bool  RPE_Utility::ReadCSVFile(const std::string fileName,
-                               Eigen::MatrixXd *file_data) {
+                               Eigen::MatrixXd& file_data) {
    std::ostringstream strs;
-   if (!file_data) {
-      strs.str("");
-      strs << " Input data pointer is NULL, stop here!" << std::endl;
-      LOG_ERROR(strs);
-      return false;
-   }
    try {
       auto data = loadtxt(fileName).comments("#")();
       if (data.empty()) {
@@ -38,7 +32,7 @@ bool  RPE_Utility::ReadCSVFile(const std::string fileName,
       file_data->resize(numRows, numCols);
       for (size_t i=0; i< numRows; i++) {
          for (size_t j=0; j < numCols; j++) {
-            (*file_data)(i, j) = data[i][j];
+            file_data(i, j) = data[i][j];
          }
       }
    } catch(...) {
