@@ -25,68 +25,48 @@ DecentAlg::DecentAlg(const double eta, const double sam_region_scale,
       first_time_cond_opt_(true),
       initialized_(true) {}
 
-bool DecentAlg::computeInvCond(const Eigen::MatrixXd &A, double *InvCond,
-                               int *rank) {
-  std::ostringstream strs;
-  if (!InvCond || !rank) {
-    strs.str("");
-    strs << "output pointer InvCond or rank is null in function "
-         << __FUNCTION__ << ", at line " << __LINE__ << std::endl;
-    LOG_ERROR(strs);
-    return false;
-  }
-
+bool DecentAlg::computeInvCond(const Eigen::MatrixXd& A, double& InvCond,
+                               int& rank) {
   Eigen::JacobiSVD<Eigen::MatrixXd> svd(A);
   Eigen::VectorXd sgvalue = svd.singularValues();
   size_t numSing = sgvalue.size();
-  *rank = numSing;
+  rank = numSing;
   if (sgvalue(0) < JACOBIAN_MIN_SING) {
-    *InvCond = 0;
-    *rank = 0;  // set rank as 0, and invcond as 0, i.e. singular
+    InvCond = 0;
+    rank = 0;  // set rank as 0, and invcond as 0, i.e. singular
     return true;
   }
   for (int i = numSing - 1; i >= 0; i--) {
     if (sgvalue(i) / sgvalue(0) < JACOBIAN_MIN_SING_RATIO) {
-      (*rank)--;
+      rank--;
     } else {
       break;
     }
   }
-  *InvCond = sgvalue(numSing - 1) / sgvalue(0);
+  InvCond = sgvalue(numSing - 1) / sgvalue(0);
   return true;
 }
 
-void DecentAlg::removeColumn(Eigen::MatrixXd *matrix, unsigned int colToRemove) {
-  // std::cout << "remoe col =" << colToRemove << std::endl;
-  if (!matrix) {
-    return;
-  }
-  size_t numRows = matrix->rows();
-  size_t numCols = matrix->cols() - 1;
+void DecentAlg::removeColumn(Eigen::MatrixXd& matrix, unsigned int colToRemove) {
+  size_t numRows = matrix.rows();
+  size_t numCols = matrix.cols() - 1;
 
   if (colToRemove <= numCols) {
-    matrix->block(0, colToRemove, numRows, numCols - colToRemove) =
-        matrix->rightCols(numCols - colToRemove);
-    matrix->conservativeResize(numRows, numCols);
+    matrix.block(0, colToRemove, numRows, numCols - colToRemove) =
+        matrix.rightCols(numCols - colToRemove);
+    matrix.conservativeResize(numRows, numCols);
   }
 }
 
-bool DecentAlg::reduceJacobian(const Eigen::MatrixXd &A1, Eigen::MatrixXd *A2,
-                         std::vector<int> *A2_indices,
-                         std::vector<int> *d_indices) {
+bool DecentAlg::reduceJacobian(const Eigen::MatrixXd& A1, Eigen::MatrixXd& A2,
+                         std::vector<int>& A2_indices,
+                         std::vector<int>& d_indices) {
   std::ostringstream strs;
-  if (!A2 || !A2_indices || !d_indices) {
-    strs.str("");
-    strs << "output pointer A2 is null in function " << __FUNCTION__
-         << ", at line " << __LINE__ << std::endl;
-    LOG_ERROR(strs);
-    return false;
-  }
 
   int init_rank;        // initial rank
   double init_iv_cond;  // initial inverse cond
 
-  if (!computeInvCond(A1, &init_iv_cond, &init_rank)) {
+  if (!computeInvCond(A1, init_iv_cond, init_rank)) {
     strs.str("");
     strs << "computeInvCond fails in function " << __FUNCTION__ << ", at line "
          << __LINE__ << std::endl;
@@ -111,10 +91,10 @@ bool DecentAlg::reduceJacobian(const Eigen::MatrixXd &A1, Eigen::MatrixXd *A2,
   // number
   size_t numCols = A1.cols();
 
-  A2_indices->resize(numCols);
-  d_indices->clear();
+  A2_indices.resize(numCols);
+  d_indices.clear();
   for (int i = 0; i < numCols; i++) {
-    A2_indices->at(i) = i;
+    A2_indices.at(i) = i;
   }
 
   Eigen::MatrixXd B = A1;
@@ -127,11 +107,11 @@ bool DecentAlg::reduceJacobian(const Eigen::MatrixXd &A1, Eigen::MatrixXd *A2,
     for (size_t i = 0; i < numCols; i++) {
       Eigen::MatrixXd B1 = B;
       Eigen::VectorXd vCol = B1.col(i);
-      removeColumn(&B1, i);
+      removeColumn(B1, i);
 
       int rank;        // rank
       double iv_cond;  // inverse cond
-      if (!computeInvCond(B1, &iv_cond, &rank)) {
+      if (!computeInvCond(B1, iv_cond, rank)) {
         strs.str("");
         strs << "computeInvCond fails with matrix B1=" << B1 << ", in function "
              << __FUNCTION__ << ", at line " << __LINE__ << std::endl;
@@ -159,8 +139,8 @@ bool DecentAlg::reduceJacobian(const Eigen::MatrixXd &A1, Eigen::MatrixXd *A2,
       LOG_ERROR(strs);
       return false;
     }
-    d_indices->push_back(A2_indices->at(max_iv_cond_index));
-    A2_indices->erase(A2_indices->begin() + max_iv_cond_index);
+    d_indices.push_back(A2_indices[max_iv_cond_index]);
+    A2_indices.erase(A2_indices.begin() + max_iv_cond_index);
 
     B = bestB;
     numCols--;
@@ -181,36 +161,29 @@ bool DecentAlg::reduceJacobian(const Eigen::MatrixXd &A1, Eigen::MatrixXd *A2,
       break;
     }
   }
-  *A2 = B;
+  A2 = B;
   strs.str("");
   strs << "Final reduced matrix  A2=" << B << ", in function " << __FUNCTION__
        << ", at line " << __LINE__ << std::endl;
   strs << "Indep. column indices=";
   for (size_t i = 0; i < numCols; i++) {
-    strs << A2_indices->at(i) << " ";
+    strs << A2_indices[i] << " ";
   }
   strs << std::endl;
-  std::sort((*d_indices).begin(), (*d_indices).end(), std::greater<size_t>());
+  std::sort(d_indices.begin(), d_indices.end(), std::greater<size_t>());
   strs << "Dep. column indices=";
-  for (size_t i = 0; i < d_indices->size(); i++) {
-    strs << d_indices->at(i) << " ";
+  for (size_t i = 0; i < d_indices.size(); i++) {
+    strs << d_indices[i] << " ";
   }
   strs << std::endl;
   LOG_INFO(strs);
   return true;
 }
 
-bool DecentAlg::OptGradientVec(const Eigen::MatrixXd &A1,
-                               const Eigen::VectorXd &b,
-                               Eigen::VectorXd *para) {
+bool DecentAlg::OptGradientVec(const Eigen::MatrixXd& A1,
+                               const Eigen::VectorXd& b,
+                               Eigen::VectorXd& para) {
   std::ostringstream strs;
-  if (!para) {
-    strs.str("");
-    strs << "output pointer para is null in function " << __FUNCTION__
-         << ", at line " << __LINE__ << std::endl;
-    LOG_ERROR(strs);
-    return false;
-  }
   if (!initialized_) {
     strs.str("");
     strs << "parameter is not initialized, can not do optimization "
@@ -226,7 +199,7 @@ bool DecentAlg::OptGradientVec(const Eigen::MatrixXd &A1,
   size_t numParam1;
   Eigen::MatrixXd A2;
   if (first_time_cond_opt_) {
-    if (!reduceJacobian(A1, &A2, &ind_indices_, &d_indices_)) {
+    if (!reduceJacobian(A1, A2, ind_indices_, d_indices_)) {
       strs.str("");
       strs << "reduce Jacobian based upon maximizing inv condition fails "
            << __FUNCTION__ << ", at line " << __LINE__ << std::endl;
@@ -242,7 +215,7 @@ bool DecentAlg::OptGradientVec(const Eigen::MatrixXd &A1,
       // luckily, the vector of depend column indices in d_jacobian_cols_
       // are arranged from largest toward smallest, so we can continuously
       // call removeColumn
-      removeColumn(&A2, d_indices_[i]);
+      removeColumn(A2, d_indices_[i]);
     }
   }
 
@@ -289,7 +262,7 @@ bool DecentAlg::OptGradientVec(const Eigen::MatrixXd &A1,
       for (size_t i = 0; i < numParam1; i++) {
         delta_p_new(ind_indices_[i]) = delta_p_old(i);
       }
-      *para = delta_p_new;
+      para = delta_p_new;
       t_++;
       return false;  // for recompute the sam grad
     } else {         // return the actual (worse case of batch grad)
@@ -309,7 +282,7 @@ bool DecentAlg::OptGradientVec(const Eigen::MatrixXd &A1,
       for (size_t i = 0; i < numParam1; i++) {
         delta_p_new(ind_indices_[i]) = delta_p_old(i);
       }
-      *para = delta_p_new;
+      para = delta_p_new;
       t_++;
       return false;  // for recompute the sam grad
     } else {         // return the actual (worse case of batch grad)
@@ -323,7 +296,7 @@ bool DecentAlg::OptGradientVec(const Eigen::MatrixXd &A1,
   for (size_t i = 0; i < numParam1; i++) {
     delta_p_new(ind_indices_[i]) = delta_p_old(i);
   }
-  *para = delta_p_new;
+  para = delta_p_new;
   strs.str("");
   strs << "grad offset at step " << t_ << " = " << *para << std::endl;
   t_++;

@@ -16,16 +16,16 @@
 #include "robnux_kdl_common/common_exportdecl.h"
 namespace kinematics_lib{
 // if singular value is too small
-static const double JACOBIAN_MIN_SING = 1e-10;
+static constexpr double JACOBIAN_MIN_SING = 1e-10;
 // if singular value / max sing is too small, it will
 // be considered not independent
-static const double JACOBIAN_MIN_SING_RATIO = 1e-6;
+static constexpr double JACOBIAN_MIN_SING_RATIO = 1e-6;
 // if inverse cond > 0.01, we think this jocobian is acceptable
-static const double MIN_JAC_INV_COND_ENGOUGH = 1e-2;
+static constexpr double MIN_JAC_INV_COND_ENGOUGH = 1e-2;
 // if a Jacobian col has too small norm, it will be removed from the matrix
-static const double ZERO_COL_EPS = 1e-18;
+static constexpr double ZERO_COL_EPS = 1e-18;
 // decent algorithm step size
-static const double CALIB_DECENT_STEPSIZE = 0.00025;
+static constexpr double CALIB_DECENT_STEPSIZE = 0.00025;
 
 class COMMON_API DecentAlg {
  public:
@@ -51,24 +51,34 @@ class COMMON_API DecentAlg {
      
      /*
       * @brief find the optimal gradient vector
-      * @A, @b,   min|A * para - b|
+      * @param A, b in  optimization problem   min|A * para - b|
       * @para optimal gradient vector
       */
      bool OptGradientVec(const Eigen::MatrixXd &A, const Eigen::VectorXd &b,
-                      Eigen::VectorXd *para);
+                      Eigen::VectorXd& para);
 
-     //! reduction of Jacobian by condition number
-     //! B_indices are indendent indices, while d_indices are dependent indices
-     bool reduceJacobian(const Eigen::MatrixXd& A, 
-                         Eigen::MatrixXd *B,
-                         std::vector<int> *B_indices,
-                         std::vector<int> *d_indices);
+     /* @brief reduction of Jacobian by condition number
+        * @A input Jacobian matrix
+        * @B output reduced Jacobian matrix
+        * @B_indices are indendent indices, while d_indices are dependent indices
+      */        
+     bool ReduceJacobian(const Eigen::MatrixXd& A, 
+                         Eigen::MatrixXd& B,
+                         std::vector<int>& B_indices,
+                         std::vector<int>& d_indices);
 
-     //! compute Inverse condition number as well as rank of a matrix
-     bool computeInvCond(const Eigen::MatrixXd& A, double *InvCond, int *rank);
+     /* @brief compute Inverse condition number as well as rank of a matrix
+        * @A input matrix
+        * @InvCond output inverse condition number
+        * @rank output rank of the matrix
+      */
+     bool computeInvCond(const Eigen::MatrixXd& A, double& InvCond, int& rank);
 
-     //! remove Jacobian matrix col  1 col each time
-     void removeColumn(Eigen::MatrixXd *matrix, unsigned int colToRemove);
+     /* @brief remove Jacobian matrix column
+        * @matrix input matrix
+        * @colToRemove column to remove
+      */
+     void RemoveColumn(Eigen::MatrixXd& matrix, unsigned int colToRemove);
 
  private:
   double eta_;  // decay step size
