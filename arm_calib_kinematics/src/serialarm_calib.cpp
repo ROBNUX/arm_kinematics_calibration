@@ -11,10 +11,10 @@ PLUGINLIB_EXPORT_CLASS(kinematics_lib::SerialArmCalib,
 namespace kinematics_lib {
 
 SerialArmCalib::SerialArmCalib()
-    : BaseKinematicMap(0, 0), BaseCalibration(), resetCache_(true) {}
+    : serialArm(0, 0), BaseCalibration(), resetCache_(true) {}
 
 SerialArmCalib::SerialArmCalib(const size_t DoF)
-    : BaseKinematicMap(DoF, DoF),
+    : serialArm(DoF, DoF),
       BaseCalibration(),
       alpha_(Eigen::VectorXd::Zero(DoF)),
       alpha_c_(Eigen::VectorXd::Zero(DoF)),
@@ -35,8 +35,7 @@ SerialArmCalib::SerialArmCalib(const size_t DoF)
 }
 
 SerialArmCalib::SerialArmCalib(const Eigen::VectorXd &kine_para)
-    : BaseKinematicMap((kine_para.size() - 14) / 6,  // 14 parameters are base
-                       (kine_para.size() - 14) / 6),
+    : serialArm((kine_para.size() - 14) / 6, (kine_para.size() - 14) / 6),
       BaseCalibration(),
       resetCache_(true) {
   SetGeometry(kine_para);
@@ -46,434 +45,7 @@ SerialArmCalib::SerialArmCalib(const Eigen::VectorXd &kine_para)
   }
 }
 
-// kine_para =[ [alpha], [a], [theta], [d] ]
-void SerialArmCalib::SetGeometry(const Eigen::VectorXd &kine_para) {
-  std::ostringstream strs;
-  if (initialized_) {
-    strs.str("");
-    strs << GetName() << ":"
-         << "has already been initialized in " << __FUNCTION__
-         << " and at line " << __LINE__ << std::endl;
-    LOG_ERROR(strs);
-    return;
-  }
-  if (kine_para.size() >= 6 * DoF_ + 14) {
-    alpha_ = kine_para.segment(0, DoF_);
-    a_ = kine_para.segment(DoF_, DoF_);
-    theta_ = kine_para.segment(2 * DoF_, DoF_);
-    d_ = kine_para.segment(3 * DoF_, DoF_);
-    beta_ = kine_para.segment(4 * DoF_, DoF_);
-    pitch_ = kine_para.segment(5 * DoF_, DoF_);
-    SetDefaultBaseOffReg(kine_para.segment(6 * DoF_, 7),
-                         kine_para.segment(6 * DoF_ + 7, 7));
-    // during initialization, we set calibrated parameters to be same as
-    // default parameters
-    alpha_c_ = alpha_;
-    a_c_ = a_;
-    d_c_ = d_;
-    theta_c_ = theta_;
-    beta_c_ = beta_;
-    initialized_ = true;
-  } else {
-    strs.str("");
-    strs << GetName() << ":"
-         << "input parameters has dimension less than 6 * DoF in "
-         << __FUNCTION__ << " line " << __LINE__ << std::endl;
-    LOG_ERROR(strs);
-  }
-}
 
-void SerialArmCalib::UpdateDH(const Eigen::VectorXd &jnt,
-                              Eigen::VectorXd *theta,
-                              Eigen::VectorXd *d) const {
-  std::ostringstream strs;
-  strs.str("");
-  strs << GetName() << ":"
-       << "This function shouldn't be called, should be implemented in"
-       << " children class, in " << __FUNCTION__ << " line " << __LINE__
-       << std::endl;
-  LOG_ALARM(strs);
-}
-
-void SerialArmCalib::UpdateConfigTurn(const Eigen::VectorXd &theta,
-                                      const Eigen::VectorXd &d,
-                                      std::vector<int> *branchFlags,
-                                      std::vector<int> *jointTurns) const {
-  std::ostringstream strs;
-  strs.str("");
-  strs << GetName() << ":"
-       << "This function shouldn't be called, should be implemented in"
-       << " children class, in " << __FUNCTION__ << " line " << __LINE__
-       << std::endl;
-  LOG_ALARM(strs);
-}
-
-int SerialArmCalib::JntToCart(const Eigen::VectorXd &q, Pose *p) {
-  std::ostringstream strs;
-  if (!p) {
-    strs.str("");
-    strs << GetName() << ":"
-         << "input pose pointer is null in " << __FUNCTION__ << ", at line "
-         << __LINE__ << std::endl;
-    LOG_ERROR(strs);
-    return -ERR_INPUT_POINTER_NULL;
-  }
-  Eigen::VectorXd a_tmp, alpha_tmp, beta_tmp, d_tmp, theta_tmp;
-  if (useCalibrated_) {  // if use calibrated parameters
-    a_tmp = a_c_;
-    alpha_tmp = alpha_c_;
-    beta_tmp = beta_c_;
-    d_tmp = d_c_;
-    theta_tmp = theta_c_;
-  } else {
-    a_tmp = a_;
-    alpha_tmp = alpha_;
-    beta_tmp = beta_;
-    d_tmp = d_;
-    theta_tmp = theta_;
-  }
-  // update dh based upon joint feedback
-  UpdateDH(q, &theta_tmp, &d_tmp);
-  Frame tmp = defaultBaseOff_;
-  for (size_t i = 0; i < DoF_; i++) {
-    tmp = tmp * Frame::DH_Craig1989_EX(a_tmp[i], alpha_tmp[i], beta_tmp[i],
-                                       d_tmp[i], theta_tmp[i]);
-  }
-
-  // config flags
-  std::vector<int> branchFlags;
-  // turn flags
-  std::vector<int> jointTurns;
-  // get flags and turn from final theta and d including their initial values
-  // plus joint displacement
-  UpdateConfigTurn(theta_tmp, d_tmp, &branchFlags, &jointTurns);
-  p->setFrame(tmp);
-  p->setBranchFlags(branchFlags);
-  p->setJointTurns(jointTurns);
-  return 0;
-}
-
-// nominal Jacobian without considering base offset
-int SerialArmCalib::CalcJacobian(const Eigen::VectorXd &kine_para, Pose *p,
-                                 Eigen::MatrixXd *Jp_t, Eigen::MatrixXd *Jp_r,
-                                 const bool default_rob_base) {
-  // Jp is 6 * kine_para_.size() matrix
-  if (!p || !Jp_t || !Jp_r) {
-    std::ostringstream strs;
-    strs << GetName() << ":"
-         << "input pose, Jp, Jj pointers are null in " << __FUNCTION__
-         << " at line " << __LINE__ << std::endl;
-    LOG_ERROR(strs);
-    return -ERR_INPUT_POINTER_NULL;
-  }
-  const int tol_size = 5 * DoF_;
-  if (kine_para.size() == tol_size) {
-    if (Jp_t->rows() != 3 || Jp_t->cols() != tol_size) {
-      // if size is not match, we have to resize to the correct size
-      Jp_t->resize(3, tol_size);
-    }
-    if (Jp_r->rows() != 3 || Jp_r->cols() != tol_size) {
-      // if size is not match, we have to resize to the correct size
-      Jp_r->resize(3, tol_size);
-    }
-    Frame bt;  // default to identity if default_rob_base = true
-    if (!default_rob_base) {
-      bt = defaultBaseOff_;  // frame that represent transformation from base to
-                             // tool
-    }
-
-    Eigen::VectorXd alpha_tmp(DoF_), a_tmp(DoF_), d_tmp(DoF_), theta_tmp(DoF_),
-        beta_tmp(DoF_);
-    alpha_tmp = kine_para.segment(0, DoF_);
-    a_tmp = kine_para.segment(DoF_, DoF_);
-    theta_tmp = kine_para.segment(2 * DoF_, DoF_);
-    d_tmp = kine_para.segment(3 * DoF_, DoF_);
-    beta_tmp = kine_para.segment(4 * DoF_, DoF_);
-    for (size_t i = 0; i < DoF_; i++) {
-      // computing the linear part of the Jp
-      Rotation r = bt.getRotation();
-      Vec t = bt.getTranslation();
-      Vec t_col2 = r.UnitX();
-      Vec t_col1 = t * t_col2;
-      Jp_t->col(5 * i) = t_col1.ToEigenVec();      // 1rd column is dalpha
-      Jp_t->col(5 * i + 1) = t_col2.ToEigenVec();  // 2rd column is da
-
-      Jp_r->col(5 * i) = t_col2.ToEigenVec();
-      Eigen::Vector3d v(0, 0, 0);
-      Jp_r->col(5 * i + 1) = v;
-      // start computing Jacobian
-      Rotation r1 = Rotation::RotX(alpha_tmp[i]);
-      // combined trans. of alpha_i and a_i
-      Frame f1(r1, Vec(a_tmp[i], 0, 0));
-
-      // bt is frame up to end of alpha_i, a_i
-      bt = bt * f1;
-      r = bt.getRotation();
-      t = bt.getTranslation();
-      t_col2 = r.UnitZ();
-      t_col1 = t * t_col2;
-      Jp_t->col(5 * i + 2) = t_col1.ToEigenVec();  // 3rd column is dtheta_i
-      Jp_t->col(5 * i + 3) = t_col2.ToEigenVec();  // 4th column is dd_i
-
-      Jp_r->col(5 * i + 2) = t_col2.ToEigenVec();
-      // Eigen::Vector3d v(0,0,0);
-      Jp_r->col(5 * i + 3) = v;
-
-      Rotation r2 = Rotation::RotZ(theta_tmp[i]);
-      Frame f2(r2, Vec(0, 0, d_tmp[i]));
-      // bt is frame up to end of theta_i, d_i
-      bt = bt * f2;
-      r = bt.getRotation();
-      t = bt.getTranslation();
-      t_col2 = r.UnitY();
-      t_col1 = t * t_col2;
-      Jp_t->col(5 * i + 4) = t_col1.ToEigenVec();  // 5rd column is dbeta_i
-      Jp_r->col(5 * i + 4) = t_col2.ToEigenVec();
-      Rotation r3 = Rotation::RotY(beta_tmp[i]);
-      Frame f3(r3, Vec(0, 0, 0));
-      bt = bt * f3;
-    }
-
-    // config flags
-    std::vector<int> branchFlags;
-    // turn flags
-    std::vector<int> jointTurns;
-    // get flags and turn from final theta and d including their initial values
-    // plus joint displacement
-    UpdateConfigTurn(theta_tmp, d_tmp, &branchFlags, &jointTurns);
-
-    p->setFrame(bt);
-    p->setBranchFlags(branchFlags);
-    p->setJointTurns(jointTurns);
-  } else {
-    std::ostringstream strs;
-    strs << GetName() << ":"
-         << "input kine_parameters has dimension not equal to 5 * DoF in "
-         << __FUNCTION__ << " line " << __LINE__ << std::endl;
-    LOG_ERROR(strs);
-    return -ERR_INPUT_PARA_WRONG_DIM;
-  }
-  return 0;
-}
-
-bool SerialArmCalib::PickSubJacobian(const Eigen::MatrixXd &Jp_t,
-                                     const Eigen::MatrixXd &Jp_r,
-                                     Eigen::MatrixXd *Js_t,
-                                     Eigen::MatrixXd *Js_r,
-                                     const bool reduction) {
-  std::ostringstream strs;
-  strs.str("");
-  strs << GetName() << ":"
-       << "This function shouldn't be called"
-       << " should be implemented in children class, in " << __FUNCTION__
-       << " line " << __LINE__ << std::endl;
-  LOG_ALARM(strs);
-  return false;
-}
-
-int SerialArmCalib::JntToCart(const Eigen::VectorXd &q,
-                              const Eigen::VectorXd &qdot, Pose *p, Twist *v) {
-  std::ostringstream strs;
-  if (!p || !v) {
-    strs.str("");
-    strs << GetName() << ":"
-         << "input pose and twist parameter is null in function "
-         << __FUNCTION__ << ", line " << __LINE__ << std::endl;
-    LOG_ERROR(strs);
-    return -ERR_INPUT_POINTER_NULL;
-  }
-  if (!initialized_) {
-    strs.str("");
-    strs << GetName() << ":"
-         << "Scara geometric parameters are not initialized"
-         << " in function " << __FUNCTION__ << ", line " << __LINE__
-         << std::endl;
-    LOG_ERROR(strs);
-    return -ERR_ROB_PARAM_NOT_INITIALIZED;
-  }
-  if (q.size() != DoF_ || qdot.size() != DoF_) {
-    strs.str("");
-    strs << GetName() << ":"
-         << "Input q and qdot dimension does not match with the robot"
-         << " in function " << __FUNCTION__ << ", line " << __LINE__
-         << std::endl;
-    LOG_ERROR(strs);
-    return -ERR_INPUT_PARA_WRONG_DIM;
-  }
-  // need to compute the Jacobian
-  Eigen::VectorXd a_tmp, alpha_tmp, beta_tmp, d_tmp, theta_tmp;
-  if (useCalibrated_) {  // if use calibrated parameters
-    a_tmp = a_c_;
-    alpha_tmp = alpha_c_;
-    beta_tmp = beta_c_;
-    d_tmp = d_c_;
-    theta_tmp = theta_c_;
-  } else {
-    a_tmp = a_;
-    alpha_tmp = alpha_;
-    beta_tmp = beta_;
-    d_tmp = d_;
-    theta_tmp = theta_;
-  }
-  // update dh based upon joint feedback
-  UpdateDH(q, &theta_tmp, &d_tmp);
-
-  Eigen::VectorXd kine_para(5 * DoF_);
-  kine_para.segment(0, DoF_) = alpha_tmp;
-  kine_para.segment(DoF_, DoF_) = a_tmp;
-  kine_para.segment(2 * DoF_, DoF_) = theta_tmp;
-  kine_para.segment(3 * DoF_, DoF_) = d_tmp;
-  kine_para.segment(4 * DoF_, DoF_) = beta_tmp;
-  // Pose tmp_p;
-  Eigen::MatrixXd Jp_t, Jp_r;
-  int ret = CalcJacobian(kine_para, p, &Jp_t, &Jp_r);
-  if (ret < 0) {
-    return ret;
-  }
-  // picking submatrix of Jp_t and Jp_r, and then multiplying qdot
-  // to obtain twist
-  Eigen::MatrixXd Mt(3, DoF_), Mr(3, DoF_);
-  if (PickSubJacobian(Jp_t, Jp_r, &Mt, &Mr)) {
-    Eigen::Vector3d gvt = Mt * qdot;
-    Eigen::Vector3d gvr = Mr * qdot;
-    v->setLinearVel(Vec(gvt(0), gvt(1), gvt(2)));
-    v->setAngularVel(Vec(gvr(0), gvr(1), gvr(2)));
-    return 0;
-  }
-  return -1;
-}
-
-int SerialArmCalib::JntToCart(const Eigen::VectorXd &q,
-                              const Eigen::VectorXd &qdot,
-                              const Eigen::VectorXd &qddot, Pose *p, Twist *v,
-                              Twist *a) {
-  return 0;
-}
-
-int SerialArmCalib::CartToJnt(const Pose &p, Eigen::VectorXd *q) {
-  // no generalized IK, so we return error here to be overrided
-  // by children class
-  std::ostringstream strs;
-  strs.str("");
-  strs << GetName() << ":"
-       << "This function shouldn't be called, should be implemented in"
-       << " children class, in " << __FUNCTION__ << " line " << __LINE__
-       << std::endl;
-  LOG_ALARM(strs);
-  return -1001;
-}
-
-// nominal velocity IK
-int SerialArmCalib::CartToJnt(const Pose &p, const Twist &v, Eigen::VectorXd *q,
-                              Eigen::VectorXd *qdot) {
-  std::ostringstream strs;
-  if (!q || !qdot) {
-    strs.str("");
-    strs << GetName() << ":"
-         << "Input q and qdot vectors are null"
-         << " in function " << __FUNCTION__ << ", line " << __LINE__
-         << std::endl;
-    LOG_ERROR(strs);
-    return -ERR_INPUT_POINTER_NULL;
-  }
-  if (!initialized_) {
-    strs.str("");
-    strs << GetName() << " geometric parameters are not initialized"
-         << " in function " << __FUNCTION__ << ", line " << __LINE__
-         << std::endl;
-    LOG_ERROR(strs);
-    return -ERR_ROB_PARAM_NOT_INITIALIZED;
-  }
-  // this analytic IK is using canonical robot model, for non-canonical
-  // model (e.g., model after calibration) requires using GI-based iteration
-  // method
-  if (useCalibrated_) {
-    strs.str("");
-    strs << GetName() << ":"
-         << "default CartToJnt function must using canonical kinematic"
-            " model in"
-         << __FUNCTION__ << ", at line " << __LINE__ << std::endl;
-    LOG_ERROR(strs);
-    return -ERR_ROB_DEFAULT_IK_NOT_CANO;
-  }
-  int ret = CartToJnt(p, q);
-  if (ret < 0) {
-    return ret;
-  }
-  if (qdot->size() != DoF_) {
-    qdot->resize(DoF_);
-  }
-  // need to compute the Jacobian
-  Eigen::VectorXd d_tmp, theta_tmp;
-  d_tmp = d_;
-  theta_tmp = theta_;
-  UpdateDH(*q, &theta_tmp, &d_tmp);
-  Eigen::VectorXd kine_para(5 * DoF_);
-  kine_para.segment(0, DoF_) = alpha_;
-  kine_para.segment(DoF_, DoF_) = a_;
-  kine_para.segment(2 * DoF_, DoF_) = theta_tmp;
-  kine_para.segment(3 * DoF_, DoF_) = d_tmp;
-  kine_para.segment(4 * DoF_, DoF_) = beta_;
-
-  Twist v1 = defaultBaseOff_.Inverse() * v;
-
-  Pose tmp_p;
-  Eigen::MatrixXd Jp_t, Jp_r;
-  ret = CalcJacobian(kine_para, &tmp_p, &Jp_t, &Jp_r, true);
-  if (ret < 0) {
-    return ret;
-  }
-  // picking submatrix of Jp_t and Jp_r, and then multiplying qdot
-  // to obtain twist
-  Eigen::MatrixXd M;
-  Eigen::VectorXd b;
-  Eigen::MatrixXd Js_t, Js_r;
-  PickSubJacobian(Jp_t, Jp_r, &Js_t, &Js_r, true);
-
-  size_t rowTrans = Js_t.rows();
-  size_t rowRot = Js_r.rows();
-  M.resize(rowTrans + rowRot, rowTrans + rowRot);
-  b.resize(rowTrans + rowRot);
-  if (rowTrans > 0) {
-    M.block(0, 0, rowTrans, rowTrans + rowRot) = Js_t;
-  }
-  if (rowRot > 0) {
-    M.block(rowTrans, 0, rowRot, rowTrans + rowRot) = Js_r;
-  }
-  double det = M.determinant();
-  if (fabs(det) < K_EPSILON) {
-    std::ostringstream strs;
-    strs << GetName() << " is singular, can not compute IK "
-         << " in function " << __FUNCTION__ << ", line " << __LINE__
-         << std::endl;
-    return -ERR_ROB_JACOBIAN_IK_SINGULAR;
-  }
-  Vec t_v = v1.getLinearVel();
-  Vec t_w = v1.getAngularVel();
-  double spdNorm = PickCartErr(t_v.ToEigenVec(), t_w.ToEigenVec(), &b, true);
-  *qdot = M.inverse() * b;
-  return 0;
-}
-
-double SerialArmCalib::PickCartErr(const Eigen::Vector3d &errT,
-                                   const Eigen::Vector3d &errR,
-                                   Eigen::VectorXd *b, const bool reduction) {
-  std::ostringstream strs;
-  strs.str("");
-  strs << GetName() << ":"
-       << "This function shouldn't be called, should be implemented in"
-       << " children class, in " << __FUNCTION__ << " line " << __LINE__
-       << std::endl;
-  LOG_ALARM(strs);
-  return -1.0;
-}
-
-// these will be left to next/next week to do
-int SerialArmCalib::CartToJnt(const Pose &p, const Twist &v, const Twist &a,
-                              Eigen::VectorXd *q, Eigen::VectorXd *qdot,
-                              Eigen::VectorXd *qddot) {
-  return 0;
-}
 
 bool SerialArmCalib::resetCalibration() {
   alpha_c_ = alpha_;
@@ -489,67 +61,44 @@ bool SerialArmCalib::resetCalibration() {
   return true;
 }
 
-void SerialArmCalib::UpdateDH(const Eigen::VectorXd &orig_dh,
-                              const Eigen::VectorXd &jnt,
-                              Eigen::VectorXd *new_dh) const {
-  std::ostringstream strs;
-  strs.str("");
-  strs << GetName() << ":"
-       << "This function shouldn't be called, should be implemented in"
-       << " children class, in " << __FUNCTION__ << " line " << __LINE__
-       << std::endl;
-  LOG_ALARM(strs);
-  *new_dh = orig_dh;
-}
 
-void SerialArmCalib::UpdateDH(const Eigen::VectorXd &delta_p,
-                              Eigen::VectorXd *alpha, Eigen::VectorXd *a,
-                              Eigen::VectorXd *theta, Eigen::VectorXd *d,
-                              Eigen::VectorXd *beta) {
+void SerialArmCalib::UpdateDH(const Eigen::VectorXd& delta_p,
+                              Eigen::VectorXd& alpha, Eigen::VectorXd& a,
+                              Eigen::VectorXd& theta, Eigen::VectorXd& d) {
   std::ostringstream strs;
-  if (!alpha || !a || !theta || !d || !beta) {
-    strs.str("");
-    strs << GetName() << ":"
-         << "input parameters is null to function " << __FUNCTION__
-         << ", at line " << __LINE__ << std::endl;
-    LOG_ERROR(strs);
-    return;
-  }
   size_t numParam = delta_p.size();
-  if (numParam != 5 * DoF_) {
+  if (numParam != 4 * DoF_) {
     strs.str("");
     strs << GetName() << ":"
          << "number of hidden parameters " << numParam
-         << "not equal to independent cols " << 5 * DoF_ << std::endl;
+         << "not equal to independent cols " << 4 * DoF_ << std::endl;
     LOG_ERROR(strs);
     return;
   }
   // now assign back all iterated parameters
   for (size_t i = 0; i < numParam; i++) {
-    // 5 means each group has 5 dh parameters
-    size_t group_id = floor(i / 5);
-    size_t remain_id = i - group_id * 5;
+    // 4 means each group has 4 dh parameters
+    size_t group_id = floor(i / 4);
+    size_t remain_id = i - group_id * 4;
     if (group_id < DoF_) {
       // means this parameter must belong to dh of the group group_id
       if (remain_id == 0) {  // alpha parameter
-        (*alpha)(group_id) += delta_p(i);
+        alpha(group_id) += delta_p(i);
       } else if (remain_id == 1) {  // a parameter
-        (*a)(group_id) += delta_p(i);
+        a(group_id) += delta_p(i);
       } else if (remain_id == 2) {  // theta parameter
-        (*theta)(group_id) += delta_p(i);
-      } else if (remain_id == 3) {  // d parameter
-        (*d)(group_id) += delta_p(i);
-      } else {
-        (*beta)(group_id) += delta_p(i);
-      }
+        theta(group_id) += delta_p(i);
+      } else {  // d parameter
+        d(group_id) += delta_p(i);
+      } 
     }
   }
 }
 
-bool SerialArmCalib::PickSubJacobianForPara(const Eigen::MatrixXd &Jt_p,
-                                            const Eigen::MatrixXd &Jp_r,
-                                            Eigen::MatrixXd *Js_t1,
-                                            Eigen::MatrixXd *Js_r1,
+bool SerialArmCalib::PickSubJacobianForPara(const Eigen::MatrixXd& Jt_p,
+                                            const Eigen::MatrixXd& Jp_r,
+                                            Eigen::MatrixXd& Js_t1,
+                                            Eigen::MatrixXd& Js_r1,
                                             const bool reduction) {
   std::ostringstream strs;
   strs.str("");
@@ -561,18 +110,10 @@ bool SerialArmCalib::PickSubJacobianForPara(const Eigen::MatrixXd &Jt_p,
   return false;
 }
 
-bool SerialArmCalib::GetCalibParamSet(EigenDRef<Eigen::VectorXd> *cal_DH) {
+bool SerialArmCalib::GetCalibParamSet(EigenDRef<Eigen::VectorXd>& cal_DH) {
   std::ostringstream strs;
-  if (!cal_DH) {  // if not calibrated, return false
-    strs.str("");
-    strs << GetName() << ":"
-         << "DH is not calibrated or the input pointer is null in function "
-         << __FUNCTION__ << ", at line " << __LINE__ << std::endl;
-    LOG_ERROR(strs);
-    return false;
-  }
   // additional 7 is for baseOffSet
-  if (cal_DH->size() < 5 * DoF_ + 14) {
+  if (cal_DH.size() < 5 * DoF_ + 14) {
     strs.str("");
     strs << GetName() << ":"
          << "The input vector pointer has wrong dimension in function "
@@ -580,24 +121,21 @@ bool SerialArmCalib::GetCalibParamSet(EigenDRef<Eigen::VectorXd> *cal_DH) {
     LOG_ERROR(strs);
     return false;
   }
-  cal_DH->segment(0, DoF_) = alpha_c_;
-  cal_DH->segment(DoF_, DoF_) = a_c_;
-  cal_DH->segment(2 * DoF_, DoF_) = theta_c_;
-  cal_DH->segment(3 * DoF_, DoF_) = d_c_;
-  cal_DH->segment(4 * DoF_, DoF_) = beta_c_;
-  cal_DH->segment(5 * DoF_, DoF_) = pitch_;
+  cal_DH.segment(0, DoF_) = alpha_c_;
+  cal_DH.segment(DoF_, DoF_) = a_c_;
+  cal_DH.segment(2 * DoF_, DoF_) = theta_c_;
+  cal_DH.segment(3 * DoF_, DoF_) = d_c_;
+  cal_DH.segment(4 * DoF_, DoF_) = pitch_;
 
   Eigen::VectorXd eigBaseOff = defaultBaseOff_.ToEigenVecQuat();
-  cal_DH->segment(5 * DoF_, 7) = eigBaseOff;
-  eigBaseOff = sub_defaultBaseOff_.ToEigenVecQuat();
-  cal_DH->segment(5 * DoF_ + 7, 7) = eigBaseOff;
+  cal_DH.segment(5 * DoF_, 7) = eigBaseOff;
   return true;
 }
 
 bool SerialArmCalib::LoadCalibParamSet(
-    const EigenDRef<Eigen::VectorXd> &cal_DH) {
+    const EigenDRef<Eigen::VectorXd>& cal_DH) {
   std::ostringstream strs;
-  if (cal_DH.size() < 5 * DoF_ + 14) {
+  if (cal_DH.size() < 5 * DoF_ + 7) {
     strs.str("");
     strs << GetName() << ":"
          << "The input vector has wrong dimension in function " << __FUNCTION__
@@ -609,17 +147,15 @@ bool SerialArmCalib::LoadCalibParamSet(
   a_c_ = cal_DH.segment(DoF_, DoF_);
   theta_c_ = cal_DH.segment(2 * DoF_, DoF_);
   d_c_ = cal_DH.segment(3 * DoF_, DoF_);
-  beta_c_ = cal_DH.segment(4 * DoF_, DoF_);
-  pitch_ = cal_DH.segment(5 * DoF_, DoF_);
+  pitch_ = cal_DH.segment(4 * DoF_, DoF_);
   strs.str("");
   strs << GetName() << ":"
        << "load calib: alpha_c: " << alpha_c_ << ", a_c: " << a_c_
        << ", theta_c: " << theta_c_ << ", d_c: " << d_c_
-       << ", beta_c: " << beta_c_ << ", pitch=" << pitch_ << std::endl;
+       << ", pitch=" << pitch_ << std::endl;
   LOG_INFO(strs);
 
   Eigen::VectorXd baseoff = cal_DH.segment(5 * DoF_, 7);
-  Eigen::VectorXd subbaseoff = cal_DH.segment(5 * DoF_ + 7, 7);
   Vec t(baseoff.segment(0, 3));
   Quaternion q(baseoff(3), baseoff(4), baseoff(5), baseoff(6));
   defaultBaseOff_.setTranslation(t);
@@ -629,17 +165,6 @@ bool SerialArmCalib::LoadCalibParamSet(
        << "SetDefaultBaseOff = " << defaultBaseOff_.ToString(true)
        << ", quat=" << defaultBaseOff_.ToString(false)
        << ", in edgen=" << baseoff.transpose() << std::endl;
-  LOG_INFO(strs);
-
-  Vec t1(subbaseoff.segment(0, 3));
-  Quaternion q1(subbaseoff(3), subbaseoff(4), subbaseoff(5), subbaseoff(6));
-  sub_defaultBaseOff_.setTranslation(t1);
-  sub_defaultBaseOff_.setQuaternion(q1);
-  strs.str("");
-  strs << GetName() << ":"
-       << "SetSubDefaultBaseOff = " << sub_defaultBaseOff_.ToString(true)
-       << ", quat=" << sub_defaultBaseOff_.ToString(false)
-       << ", in edgen=" << subbaseoff.transpose() << std::endl;
   LOG_INFO(strs);
   isDHCalibrated_ = true;
   return true;

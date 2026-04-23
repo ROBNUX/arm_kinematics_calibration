@@ -13,23 +13,24 @@ find_package(robnux_kinematics_map REQUIRED)
 find_package(robnux_utilities REQUIRED)
 find_package(Eigen3 REQUIRED)
 
-include_directories(
-  include
-  ${EIGEN3_INCLUDE_DIRS}
-)
-
-
 install(DIRECTORY include/${PROJECT_NAME}/
   DESTINATION include/${PROJECT_NAME}
 )
 
 add_library(${PROJECT_NAME} SHARED
+  src/base_calib.cpp
   src/serialarm_calib.cpp
   src/ujnt_calib.cpp
   src/xyz_calib.cpp
+  src/xyzur_calib.cpp
   src/scara_calib.cpp
   src/sixaxis_calib.cpp
   src/singleaxis_calib.cpp
+)
+
+target_include_directories(${PROJECT_NAME} PUBLIC
+  $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+  $<INSTALL_INTERFACE:include>
 )
 
 target_link_libraries(${PROJECT_NAME}
@@ -47,10 +48,20 @@ ament_target_dependencies(${PROJECT_NAME}
 set_target_properties(${PROJECT_NAME} PROPERTIES DEFINE_SYMBOL KINEMATICS_EXPORTS)
 
 install(TARGETS ${PROJECT_NAME}
+  EXPORT ${PROJECT_NAME}
   ARCHIVE DESTINATION lib
   LIBRARY DESTINATION lib
   RUNTIME DESTINATION bin
 )
 
-ament_package()
+ament_export_include_directories(include)
+ament_export_dependencies(
+  pluginlib
+  simple_motion_logger
+  robnux_kdl_common
+  robnux_kinematics_map
+  robnux_utilities
+)
+ament_export_targets(${PROJECT_NAME} HAS_LIBRARY_TARGET)
 
+ament_package()
