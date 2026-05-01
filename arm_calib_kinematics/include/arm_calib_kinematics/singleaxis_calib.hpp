@@ -8,6 +8,7 @@ class KINEMATICS_API SingleAxisCalib : public singleAxisModule,
                                        public SerialArmCalib {
  public:
   SingleAxisCalib();
+  SingleAxisCalib(const Eigen::VectorXd& kine_para);
 
   bool PickSubJacobianForPara(const Eigen::MatrixXd& Jp_t,
                               const Eigen::MatrixXd& Jp_r, 

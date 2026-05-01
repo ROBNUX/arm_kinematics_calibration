@@ -12,6 +12,8 @@ class KINEMATICS_API XyzGantryCalib : public XYZGantry,
  public:
   XyzGantryCalib();
 
+  XyzGantryCalib(const Eigen::VectorXd& kine_para);
+
   bool PickSubJacobianForPara(const Eigen::MatrixXd& Jp_t,
                               const Eigen::MatrixXd& Jp_r, 
                               Eigen::MatrixXd& Js_t1, 

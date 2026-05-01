@@ -18,8 +18,9 @@ class KINEMATICS_API UjntCalib : public UJnt,
    * robot usual jacobian (joint only jacobian)
    */
   bool PickRotSubJacobian(const Eigen::MatrixXd &Jp_t,
-                          const Eigen::MatrixXd &Jp_r, Eigen::MatrixXd *Js_t,
-                          Eigen::MatrixXd *Js_r);
+                          const Eigen::MatrixXd &Jp_r,
+                          Eigen::MatrixXd& Js_t,
+                          Eigen::MatrixXd& Js_r);
 
   /*
    * @brief given trans and euler angle error,
@@ -33,7 +34,8 @@ class KINEMATICS_API UjntCalib : public UJnt,
    * return norm of b
    */
   double PickRotCartErr(const Eigen::Vector3d &errT,
-                        const Eigen::Vector3d &errR, Eigen::VectorXd *b);
+                        const Eigen::Vector3d &errR,
+                        Eigen::VectorXd& b);
 
   /*
    * @brief pick a submatrix of the full Jacobian that corresponds to
@@ -45,7 +47,7 @@ class KINEMATICS_API UjntCalib : public UJnt,
    */
   bool PickSubJacobianForPara(const Eigen::MatrixXd &Jp_t,
                               const Eigen::MatrixXd &Jp_r,
-                              Eigen::MatrixXd *Js_t1, Eigen::MatrixXd *Js_r1,
+                              Eigen::MatrixXd& Js_t1, Eigen::MatrixXd& Js_r1,
                               const bool reduction = false) override;
 
   /*
@@ -54,8 +56,8 @@ class KINEMATICS_API UjntCalib : public UJnt,
    */ 
   bool PickRotSubJacobianForPara(const Eigen::MatrixXd &Jp_t,
                                  const Eigen::MatrixXd &Jp_r,
-                                 Eigen::MatrixXd *Js_t1,
-                                 Eigen::MatrixXd *Js_r1);
+                                 Eigen::MatrixXd &Js_t1,
+                                 Eigen::MatrixXd &Js_r1);
 
   //! get name
   virtual std::string GetName() const {

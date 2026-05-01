@@ -9,10 +9,11 @@ class KINEMATICS_API SixAxisCalib :  public SixAxis_1,
                                      public SerialArmCalib {
  public:
   SixAxisCalib();
+  SixAxisCalib(const Eigen::VectorXd& kine_para);
 
   bool PickSubJacobianForPara(const Eigen::MatrixXd& Jp_t,
                               const Eigen::MatrixXd& Jp_r,
-                              Eigen::MatrixXd* Js_t1, Eigen::MatrixXd* Js_r1,
+                              Eigen::MatrixXd& Js_t1, Eigen::MatrixXd& Js_r1,
                               const bool reduction = false) override;
 
   std::string GetName() const { return std::string("SixAxis calib"); }
