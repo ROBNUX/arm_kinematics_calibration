@@ -155,8 +155,8 @@ class KINEMATICS_API SerialArmCalib : public serialArm,
 
   /*
    * @brief extended DH parameters
-   * (alpha_, a_, theta_, d_, beta_) are parameter vectors in Craig DH
-   * convention, (alpha_c_, a_c_, theta_c_, d_c_, beta_c_), are parameters after
+   * (alpha_, a_, theta_, d_) are parameter vectors in Craig DH
+   * convention, (alpha_c_, a_c_, theta_c_, d_c_), are parameters after
    * calibration
    *
    * Note: for scara robot d_[2], theta_[0], theta_[1], theta_[3]
@@ -174,9 +174,6 @@ class KINEMATICS_API SerialArmCalib : public serialArm,
    * theta_[3] are initial values of angular values)
    */
   Eigen::VectorXd alpha_, alpha_c_;
-  // new added:  beta_ are extra angles that models the rotation of z_i r.t.
-  // z_{i-1} about y_i
-  Eigen::VectorXd beta_, beta_c_;
   // a offset vector in Craig DH convention
   Eigen::VectorXd a_, a_c_;
   // d offset vector in Craig DH convention

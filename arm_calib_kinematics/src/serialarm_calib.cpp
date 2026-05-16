@@ -20,8 +20,6 @@ SerialArmCalib::SerialArmCalib(const size_t DoF)
       alpha_c_(Eigen::VectorXd::Zero(DoF)),
       a_(Eigen::VectorXd::Zero(DoF)),
       a_c_(Eigen::VectorXd::Zero(DoF)),
-      beta_(Eigen::VectorXd::Zero(DoF)),
-      beta_c_(Eigen::VectorXd::Zero(DoF)),
       d_(Eigen::VectorXd::Zero(DoF)),
       d_c_(Eigen::VectorXd::Zero(DoF)),
       theta_(Eigen::VectorXd::Zero(DoF)),
@@ -35,7 +33,7 @@ SerialArmCalib::SerialArmCalib(const size_t DoF)
 }
 
 SerialArmCalib::SerialArmCalib(const Eigen::VectorXd &kine_para)
-    : serialArm((kine_para.size() - 14) / 6, (kine_para.size() - 14) / 6),
+    : serialArm((kine_para.size() - 7) / 4, (kine_para.size() - 7) / 4),
       BaseCalibration(),
       resetCache_(true) {
   SetGeometry(kine_para);
@@ -113,7 +111,7 @@ bool SerialArmCalib::PickSubJacobianForPara(const Eigen::MatrixXd& Jt_p,
 bool SerialArmCalib::GetCalibParamSet(EigenDRef<Eigen::VectorXd>& cal_DH) {
   std::ostringstream strs;
   // additional 7 is for baseOffSet
-  if (cal_DH.size() < 5 * DoF_ + 14) {
+  if (cal_DH.size() < 4 * DoF_ + 7) {
     strs.str("");
     strs << GetName() << ":"
          << "The input vector pointer has wrong dimension in function "
@@ -125,17 +123,16 @@ bool SerialArmCalib::GetCalibParamSet(EigenDRef<Eigen::VectorXd>& cal_DH) {
   cal_DH.segment(DoF_, DoF_) = a_c_;
   cal_DH.segment(2 * DoF_, DoF_) = theta_c_;
   cal_DH.segment(3 * DoF_, DoF_) = d_c_;
-  cal_DH.segment(4 * DoF_, DoF_) = pitch_;
 
   Eigen::VectorXd eigBaseOff = defaultBaseOff_.ToEigenVecQuat();
-  cal_DH.segment(5 * DoF_, 7) = eigBaseOff;
+  cal_DH.segment(4 * DoF_, 7) = eigBaseOff;
   return true;
 }
 
 bool SerialArmCalib::LoadCalibParamSet(
     const EigenDRef<Eigen::VectorXd>& cal_DH) {
   std::ostringstream strs;
-  if (cal_DH.size() < 5 * DoF_ + 7) {
+  if (cal_DH.size() < 4 * DoF_ + 7) {
     strs.str("");
     strs << GetName() << ":"
          << "The input vector has wrong dimension in function " << __FUNCTION__
@@ -147,7 +144,7 @@ bool SerialArmCalib::LoadCalibParamSet(
   a_c_ = cal_DH.segment(DoF_, DoF_);
   theta_c_ = cal_DH.segment(2 * DoF_, DoF_);
   d_c_ = cal_DH.segment(3 * DoF_, DoF_);
-  pitch_ = cal_DH.segment(4 * DoF_, DoF_);
+
   strs.str("");
   strs << GetName() << ":"
        << "load calib: alpha_c: " << alpha_c_ << ", a_c: " << a_c_
@@ -171,11 +168,11 @@ bool SerialArmCalib::LoadCalibParamSet(
 }
 
 double SerialArmCalib::LaserDistanceCalib(
-    const Eigen::VectorXd &base_offset, const Eigen::VectorXd &tool_offset,
-    const EigenDRef<Eigen::Matrix3d> &laser2CartMap,
-    const EigenDRef<Eigen::MatrixXd> &cart_measure,
-    const EigenDRef<Eigen::MatrixXd> &qa_array,
-    const EigenDRef<Eigen::MatrixXd> &laser_measure) {
+    const Eigen::VectorXd& base_offset, const Eigen::VectorXd& tool_offset,
+    const EigenDRef<Eigen::Matrix3d>& laser2CartMap,
+    const EigenDRef<Eigen::MatrixXd>& cart_measure,
+    const EigenDRef<Eigen::MatrixXd>& qa_array,
+    const EigenDRef<Eigen::MatrixXd>& laser_measure) {
   // check if robot has been initialized, i.e. we need to know
   // the rough kinematic model
   std::ostringstream strs;
@@ -243,18 +240,18 @@ double SerialArmCalib::LaserDistanceCalib(
   resetCache_ = true;
 
   // in any case, we start with pre-calibrated model
-  Eigen::VectorXd a_tmp = a_c_, alpha_tmp = alpha_c_, beta_tmp = beta_c_,
+  Eigen::VectorXd a_tmp = a_c_, alpha_tmp = alpha_c_,
                   d_tmp = d_c_, theta_tmp = theta_c_;
-  Eigen::VectorXd a_old = a_tmp, alpha_old = alpha_tmp, beta_old = beta_tmp,
+  Eigen::VectorXd a_old = a_tmp, alpha_old = alpha_tmp,
                   d_old = d_tmp, theta_old = theta_tmp;
   // get the translational part of tool offset, only which affect
   // measurement point coordinates
   Eigen::Vector3d tcp_trans = tool_offset.segment(0, 3);
 
   // step 1, we need to define one matrix A and one vector b for regression
-  // number of columns 5 * DoF_: alpha_ [DoF_], a_ [DoF_], theta_ [DoF_],
-  // d_ [DoF_], beta_[DoF_]
-  Eigen::MatrixXd A((num_measures - 1) * 3, 5 * DoF_);
+  // number of columns 4 * DoF_: alpha_ [DoF_], a_ [DoF_], theta_ [DoF_],
+  // d_ [DoF_]
+  Eigen::MatrixXd A((num_measures - 1) * 3, 4 * DoF_);
   Eigen::VectorXd b((num_measures - 1) * 3);
 
   double previous_err = std::numeric_limits<double>::max();
@@ -279,19 +276,17 @@ double SerialArmCalib::LaserDistanceCalib(
       alpha_old = alpha_tmp;
       d_old = d_tmp;
       theta_old = theta_tmp;
-      beta_old = beta_tmp;
       previous_err = estimation_err;
     }
     cur_iter++;
 
-    Eigen::VectorXd kine_para(5 * DoF_),
-        tmp_para(5 * DoF_);  // clearing kine_para, and tmp_para
+    Eigen::VectorXd kine_para(4 * DoF_),
+        tmp_para(4 * DoF_);  // clearing kine_para, and tmp_para
     // fill in the value of alpha_tmp, a_tmp, theta_tmp, d_tmp
     kine_para.segment(0, DoF_) = alpha_tmp;
     kine_para.segment(DoF_, DoF_) = a_tmp;
     kine_para.segment(2 * DoF_, DoF_) = theta_tmp;
     kine_para.segment(3 * DoF_, DoF_) = d_tmp;
-    kine_para.segment(4 * DoF_, DoF_) = beta_tmp;
 
     // with current set of DHs: kine_para,  compute A,b, and estimation_err
     estimation_err = 0;
@@ -355,11 +350,11 @@ double SerialArmCalib::LaserDistanceCalib(
         return -ERR_CALIB_REG_WRONG_DIM;
       }
       delta_p_old_cache_ = delta_p_old;
-      UpdateDH(delta_p_old, &alpha_tmp, &a_tmp, &theta_tmp, &d_tmp, &beta_tmp);
+      UpdateDH(delta_p_old, &alpha_tmp, &a_tmp, &theta_tmp, &d_tmp);
       resetCache_ = false;
     } else {
       UpdateDH(delta_p_old - delta_p_old_cache_, &alpha_tmp, &a_tmp, &theta_tmp,
-               &d_tmp, &beta_tmp);
+               &d_tmp);
       resetCache_ = true;
     }
   }
@@ -392,25 +387,23 @@ double SerialArmCalib::LaserDistanceCalib(
   a_c_ = a_old;
   theta_c_ = theta_old;
   d_c_ = d_old;
-  beta_c_ = beta_old;
   strs.str("");
   strs << GetName() << ":"
        << "alpha_c: " << alpha_c_ << ", a_c: " << a_c_
        << ", theta_c: " << theta_c_ << ", d_c: " << d_c_
-       << ", beta_c: " << beta_c_ << std::endl;
+       << std::endl;
   strs << "tool = " << tool_offset << std::endl;
   strs << "base = " << base_offset << std::endl;
   strs << "final matching error=" << previous_err << std::endl;
   LOG_INFO(strs);
   isDHCalibrated_ = true;
 
-  Eigen::VectorXd kine_para(5 * DoF_),
-      tmp_para(5 * DoF_);  // clearing kine_para
+  Eigen::VectorXd kine_para(4 * DoF_),
+      tmp_para(4 * DoF_);  // clearing kine_para
   kine_para.segment(0, DoF_) = alpha_tmp;
   kine_para.segment(DoF_, DoF_) = a_tmp;
   kine_para.segment(2 * DoF_, DoF_) = theta_tmp;
   kine_para.segment(3 * DoF_, DoF_) = d_tmp;
-  kine_para.segment(4 * DoF_, DoF_) = beta_tmp;
   double orig_err = 0, comp_err = 0;
   for (size_t i = num_measures; i < total_measures; i++) {
     UpdateDH(kine_para, qa_array.col(i), &tmp_para);

@@ -21,427 +21,13 @@ XyzUrCalib::XyzUrCalib(const Eigen::VectorXd &dh_UR,
   initialized_ = true;
 }
 
-void XyzUrCalib::SetGeometry(const Eigen::VectorXd &kine_para) {
-  std::ostringstream strs;
-  if (kine_para.size() < 6 * DoF_) {
-    strs.str("");
-    strs << GetName() << ":"
-         << "XYZ_UR set geometry got input parameters with wrong dimension"
-         << " in function " << __FUNCTION__ << ", line " << __LINE__
-         << std::endl;
-    LOG_ERROR(strs);
-    return;
-  }
-  if (!ur_calib || !xyz_calib) {
-    strs.str("");
-    strs << GetName() << ":"
-         << "XYZ_UR set geometry fails because UR and XYZ are null"
-         << " in function " << __FUNCTION__ << ", line " << __LINE__
-         << std::endl;
-    LOG_ERROR(strs);
-    return;
-  }
-  Eigen::VectorXd alpha(DoF_), a(DoF_), theta(DoF_), d(DoF_), beta(DoF_),
-      pitch(DoF_);
-
-  alpha = kine_para.segment(0, DoF_);
-  a = kine_para.segment(DoF_, DoF_);
-  theta = kine_para.segment(2 * DoF_, DoF_);
-  d = kine_para.segment(3 * DoF_, DoF_);
-  beta = kine_para.segment(4 * DoF_, DoF_);
-  pitch = kine_para.segment(5 * DoF_, DoF_);
-
-  Eigen::VectorXd dh_XYZ(18), dh_UR(12);
-  dh_XYZ.segment(0, 3) = alpha.segment(0, 3);
-  dh_XYZ.segment(3, 3) = a.segment(0, 3);
-  dh_XYZ.segment(6, 3) = theta.segment(0, 3);
-  dh_XYZ.segment(9, 3) = d.segment(0, 3);
-  dh_XYZ.segment(12, 3) = beta.segment(0, 3);
-  dh_XYZ.segment(15, 3) = pitch.segment(0, 3);
-  xyz_calib->SetGeometry(dh_XYZ);
-  dh_UR.segment(0, 2) = alpha.segment(3, 2);
-  dh_UR.segment(2, 2) = a.segment(3, 2);
-  dh_UR.segment(4, 2) = theta.segment(3, 2);
-  dh_UR.segment(6, 2) = d.segment(3, 2);
-  dh_UR.segment(8, 2) = beta.segment(3, 2);
-  dh_UR.segment(10, 2) = pitch.segment(3, 2);
-  ur_calib->SetGeometry(dh_UR);
-  initialized_ = true;
-}
-
-int XyzUrCalib::CartToJnt(const Pose &p, Eigen::VectorXd *q) {
-  std::ostringstream strs;
-  if (!q) {
-    strs.str("");
-    strs << GetName() << " input joint angle pointer is null in "
-         << __FUNCTION__ << ", at line " << __LINE__ << std::endl;
-    LOG_ERROR(strs);
-    return -ERR_INPUT_POINTER_NULL;
-  }
-  if (!initialized_) {
-    strs.str("");
-    strs << GetName() << ":"
-         << "XYZ_UR geometric parameters are not initialized"
-         << " in function " << __FUNCTION__ << ", line " << __LINE__
-         << std::endl;
-    LOG_ERROR(strs);
-    return -ERR_ROB_PARAM_NOT_INITIALIZED;
-  }
-  std::vector<int> ikJointTurns;
-  p.getJointTurns(&ikJointTurns);
-
-  std::vector<int> ikJointTurn_UR;
-  ikJointTurn_UR.insert(ikJointTurn_UR.end(),
-                        ikJointTurns.begin() + xyz_calib->GetDoF(),
-                        ikJointTurns.end());
-  Pose p1 = p;
-  p1.setJointTurns(ikJointTurn_UR);
-  Eigen::VectorXd UR_jnt;
-  int ret = ur_calib->CartToJnt(p1, &UR_jnt);
-  if (ret < 0) {
-    strs.str("");
-    strs << GetName() << ":"
-         << "ur_calib->CartToJnt fails in " << __FUNCTION__ << ", line " << __LINE__
-         << std::endl;
-    LOG_ERROR(strs);
-    return ret;
-  }
-
-  Pose p2;  // default orientation
-  p2.setTranslation(p.getTranslation());
-
-  Eigen::VectorXd XYZ_jnt;
-  ret = xyz_calib->CartToJnt(p2, &XYZ_jnt);
-  if (ret < 0) {
-    strs.str("");
-    strs << GetName() << ":"
-         << "xyz_calib->CartToJnt fails in " << __FUNCTION__ << ", line " << __LINE__
-         << std::endl;
-    LOG_ERROR(strs);
-    return ret;
-  }
-  if (q->size() < DoF_) {
-    q->resize(DoF_);
-  }
-  q->segment(0, xyz_calib->GetDoF()) = XYZ_jnt;
-  q->segment(xyz_calib->GetDoF(), ur_calib->GetDoF()) = UR_jnt;
-  return 0;
-}
-
-int XyzUrCalib::JntToCart(const Eigen::VectorXd &q, Pose *p) {
-  std::ostringstream strs;
-  if (!initialized_) {
-    strs.str("");
-    strs << GetName() << ":"
-         << "XYZ_UR geometric parameters are not initialized"
-         << " in function " << __FUNCTION__ << ", line " << __LINE__
-         << std::endl;
-    LOG_ERROR(strs);
-    return -ERR_ROB_PARAM_NOT_INITIALIZED;
-  }
-  if (!p) {
-    strs.str("");
-    strs << GetName() << " input pose pointer is null in " << __FUNCTION__
-         << ", at line " << __LINE__ << std::endl;
-    LOG_ERROR(strs);
-    return -ERR_INPUT_POINTER_NULL;
-  }
-  if (q.size() != DoF_) {
-    strs.str("");
-    strs << GetName() << ":"
-         << "Input q dimension does not match with the robot"
-         << ", q size=" << q.size() << ", DoF_ =" << DoF_ << " in function "
-         << __FUNCTION__ << ", line " << __LINE__ << std::endl;
-    LOG_ERROR(strs);
-    return -ERR_INPUT_PARA_WRONG_DIM;
-  }
-  Pose pXYZ;
-  Eigen::VectorXd q1 = q.segment(0, xyz_calib->GetDoF());
-  int ret = xyz_calib->JntToCart(q1, &pXYZ);
-  if (ret < 0) {
-    return ret;
-  }
-
-  Pose pUR;
-  Eigen::VectorXd q2 = q.segment(xyz_calib->GetDoF(), ur_calib->GetDoF());
-  ret = ur_calib->JntToCart(q2, &pUR);
-  if (ret < 0) {
-    return ret;
-  }
-  // turns and flags
-  std::vector<int> jntTurns1, jntTurns2, jntTurns;
-  std::vector<int> ikBranchFlags;
-  // jnt turns vector will be combo of XYZ jnt turns + UR jnt turns
-  pXYZ.getJointTurns(&jntTurns1);
-  pUR.getJointTurns(&jntTurns2);
-  jntTurns.insert(jntTurns.end(), jntTurns1.begin(), jntTurns1.end());
-  jntTurns.insert(jntTurns.end(), jntTurns2.begin(), jntTurns2.end());
-  // BranchFlags will be only for UR robot
-  pUR.getBranchFlags(&ikBranchFlags);
-
-  // combine
-  Frame tmp(pUR.getRotation(), pXYZ.getTranslation());
-  p->setFrame(tmp);
-  p->setBranchFlags(ikBranchFlags);
-  p->setJointTurns(jntTurns);
-  return 0;
-}
-
-int XyzUrCalib::JntToCart(const Eigen::VectorXd &q, const Eigen::VectorXd &qdot,
-                          Pose *p, Twist *v) {
-  std::ostringstream strs;
-  if (!p || !v) {
-    strs.str("");
-    strs << GetName() << ":"
-         << "input pose and twist parameter is null in function "
-         << __FUNCTION__ << ", line " << __LINE__ << std::endl;
-    LOG_ERROR(strs);
-    return -ERR_INPUT_POINTER_NULL;
-  }
-  if (!initialized_) {
-    strs.str("");
-    strs << GetName() << ":"
-         << "XYZ_UR geometric parameters are not initialized"
-         << " in function " << __FUNCTION__ << ", line " << __LINE__
-         << std::endl;
-    LOG_ERROR(strs);
-    return -ERR_ROB_PARAM_NOT_INITIALIZED;
-  }
-  if (q.size() != DoF_ || qdot.size() != DoF_) {
-    strs.str("");
-    strs << GetName() << ":"
-         << "Input q and qdot dimension does not match with the robot"
-         << " in function " << __FUNCTION__ << ", line " << __LINE__
-         << std::endl;
-    LOG_ERROR(strs);
-    return -ERR_INPUT_PARA_WRONG_DIM;
-  }
-  Eigen::VectorXd q1 = q.segment(0, xyz_calib->GetDoF());
-  Eigen::VectorXd q1dot = qdot.segment(0, xyz_calib->GetDoF());
-  Eigen::VectorXd q2 = q.segment(xyz_calib->GetDoF(), ur_calib->GetDoF());
-  Eigen::VectorXd q2dot = qdot.segment(xyz_calib->GetDoF(), ur_calib->GetDoF());
-
-  Pose pXYZ, pUR;
-  Twist vXYZ, vUR;
-  int ret = xyz_calib->JntToCart(q1, q1dot, &pXYZ, &vXYZ);
-  if (ret < 0) {
-    return ret;
-  }
-  ret = ur_calib->JntToCart(q2, q2dot, &pUR, &vUR);
-  if (ret < 0) {
-    return ret;
-  }
-  Frame fr(pUR.getRotation(), pXYZ.getTranslation());
-  p->setFrame(fr);
-
-  // turns and flags
-  std::vector<int> jntTurns1, jntTurns2, jntTurns;
-  std::vector<int> ikBranchFlags;
-  // jnt turns vector will be combo of XYZ jnt turns + UR jnt turns
-  pXYZ.getJointTurns(&jntTurns1);
-  pUR.getJointTurns(&jntTurns2);
-  jntTurns.insert(jntTurns.end(), jntTurns1.begin(), jntTurns1.end());
-  jntTurns.insert(jntTurns.end(), jntTurns2.begin(), jntTurns2.end());
-  // BranchFlags will be only for UR robot
-  pUR.getBranchFlags(&ikBranchFlags);
-
-  p->setBranchFlags(ikBranchFlags);
-  p->setJointTurns(jntTurns);
-
-  Vec linear_vel = vXYZ.getLinearVel();
-  Vec angular_vel = vUR.getAngularVel();
-  v->setLinearVel(linear_vel);
-  v->setAngularVel(angular_vel);
-  return 0;
-}
-
-int XyzUrCalib::CartToJnt(const Pose &p, const Twist &v, Eigen::VectorXd *q,
-                             Eigen::VectorXd *qdot) {
-  std::ostringstream strs;
-  if (!q || !qdot) {
-    strs.str("");
-    strs << GetName() << ":"
-         << "Input q and qdot vectors are null"
-         << " in function " << __FUNCTION__ << ", line " << __LINE__
-         << std::endl;
-    LOG_ERROR(strs);
-    return -ERR_INPUT_POINTER_NULL;
-  }
-  if (!initialized_) {
-    strs.str("");
-    strs << GetName() << " geometric parameters are not initialized"
-         << " in function " << __FUNCTION__ << ", line " << __LINE__
-         << std::endl;
-    LOG_ERROR(strs);
-    return -ERR_ROB_PARAM_NOT_INITIALIZED;
-  }
-  Eigen::VectorXd qXYZ, qUR, qXYZdot, qURdot;
-  int ret = xyz_calib->CartToJnt(p, v, &qXYZ, &qXYZdot);
-  if (ret < 0) {
-    return ret;
-  }
-  ret = ur_calib->CartToJnt(p, v, &qUR, &qURdot);
-  if (ret < 0) {
-    return ret;
-  }
-  if (q->size() < DoF_) {
-    q->resize(DoF_);
-  }
-  q->segment(0, xyz_calib->GetDoF()) = qXYZ;
-  q->segment(xyz_calib->GetDoF(), ur_calib->GetDoF()) = qUR;
-  if (qdot->size() < DoF_) {
-    qdot->resize(DoF_);
-  }
-  qdot->segment(0, xyz_calib->GetDoF()) = qXYZdot;
-  qdot->segment(xyz_calib->GetDoF(), ur_calib->GetDoF()) = qURdot;
-  return 0;
-}
-
-int XyzUrCalib::CalcJacobian(const Eigen::VectorXd &kine_para, Pose *p,
-                             Eigen::MatrixXd *Jp_t, Eigen::MatrixXd *Jp_r,
-                             const bool reduction) {
-  std::ostringstream strs;
-  // Jp is 6 * kine_para_.size() matrix
-  if (!p || !Jp_t || !Jp_r) {
-    strs.str("");
-    strs << GetName() << ":"
-         << "input pose, Jp, Jj pointers are null in " << __FUNCTION__
-         << " at line " << __LINE__ << std::endl;
-    LOG_ERROR(strs);
-    return -ERR_INPUT_POINTER_NULL;
-  }
-  if (!initialized_) {
-    strs.str("");
-    strs << GetName() << " geometric parameters are not initialized"
-         << " in function " << __FUNCTION__ << ", line " << __LINE__
-         << std::endl;
-    LOG_ERROR(strs);
-    return -ERR_ROB_PARAM_NOT_INITIALIZED;
-  }
-  if (kine_para.size() != 5 * DoF_) {
-    strs.str("");
-    strs << GetName() << ":"
-         << "input kine_parameters has dimension not equal to 5 * DoF in "
-         << __FUNCTION__ << " line " << __LINE__ << std::endl;
-    LOG_ERROR(strs);
-    return -ERR_INPUT_PARA_WRONG_DIM;
-  }
-
-  Eigen::VectorXd alpha(DoF_), a(DoF_), theta(DoF_), d(DoF_), beta(DoF_);
-  alpha = kine_para.segment(0, DoF_);
-  a = kine_para.segment(DoF_, DoF_);
-  theta = kine_para.segment(2 * DoF_, DoF_);
-  d = kine_para.segment(3 * DoF_, DoF_);
-  beta = kine_para.segment(4 * DoF_, DoF_);
-
-  Eigen::VectorXd dh_XYZ(xyz_calib->GetDoF() * 5),
-      dh_UR(ur_calib->GetDoF() * 5);
-  dh_XYZ.segment(0, 3) = alpha.segment(0, 3);
-  dh_XYZ.segment(3, 3) = a.segment(0, 3);
-  dh_XYZ.segment(6, 3) = theta.segment(0, 3);
-  dh_XYZ.segment(9, 3) = d.segment(0, 3);
-  dh_XYZ.segment(12, 3) = beta.segment(0, 3);
-
-  dh_UR.segment(0, 2) = alpha.segment(3, 2);
-  dh_UR.segment(2, 2) = a.segment(3, 2);
-  dh_UR.segment(4, 2) = theta.segment(3, 2);
-  dh_UR.segment(6, 2) = d.segment(3, 2);
-  dh_UR.segment(8, 2) = beta.segment(3, 2);
-
-  Pose pXYZ, pUR;
-  Eigen::MatrixXd Jp_t_XYZ, Jp_r_XYZ;
-  Eigen::MatrixXd Jp_t_UR, Jp_r_UR;
-  int ret =
-      xyz_calib->CalcJacobian(dh_XYZ, &pXYZ, &Jp_t_XYZ, &Jp_r_XYZ, reduction);
-  if (ret < 0) {
-    return ret;
-  }
-
-  ret = ur_calib->CalcJacobian(dh_UR, &pUR, &Jp_t_UR, &Jp_r_UR, reduction);
-  if (ret < 0) {
-    return ret;
-  }
-  Frame fr(pUR.getRotation(), pXYZ.getTranslation());
-  p->setFrame(fr);
-
-  // turns and flags
-  std::vector<int> jntTurns1, jntTurns2, jntTurns;
-  std::vector<int> ikBranchFlags;
-  // jnt turns vector will be combo of XYZ jnt turns + UR jnt turns
-  pXYZ.getJointTurns(&jntTurns1);
-  pUR.getJointTurns(&jntTurns2);
-  jntTurns.insert(jntTurns.end(), jntTurns1.begin(), jntTurns1.end());
-  jntTurns.insert(jntTurns.end(), jntTurns2.begin(), jntTurns2.end());
-  // BranchFlags will be only for UR robot
-  pUR.getBranchFlags(&ikBranchFlags);
-  p->setBranchFlags(ikBranchFlags);
-  p->setJointTurns(jntTurns);
-  *Jp_t = Jp_t_XYZ;
-  *Jp_r = Jp_r_UR;
-  return 0;
-}
-
-double XyzUrCalib::CalibrateLaserCoplanar(
-    const EigenDRef<Eigen::MatrixXd>
-        &cart_measure_x,  // cartesian coordinates reported from robot
-    const EigenDRef<Eigen::MatrixXd> &cart_measure_y,
-    const EigenDRef<Eigen::MatrixXd> &cart_measure_z,
-    const EigenDRef<Eigen::MatrixXd> &laserMat_x,
-    const EigenDRef<Eigen::MatrixXd> &laserMat_y,
-    const EigenDRef<Eigen::MatrixXd> &laserMat_z,
-    const EigenDRef<Eigen::Vector3d> &laser_scale) {
-  std::ostringstream strs;
-  if (!initialized_) {
-    strs.str("");
-    strs << GetName() << " geometric parameters are not initialized"
-         << " in function " << __FUNCTION__ << ", line " << __LINE__
-         << std::endl;
-    LOG_ERROR(strs);
-    return -ERR_ROB_PARAM_NOT_INITIALIZED;
-  }
-
-  Eigen::MatrixXd cart_m_x = cart_measure_x;
-  Eigen::MatrixXd cart_m_y = cart_measure_y;
-  Eigen::MatrixXd cart_m_z = cart_measure_z;
-  size_t numRow = cart_m_x.rows();
-  size_t numCol = cart_m_x.cols();
-  if (numRow > 3) {
-    cart_m_x.block(3, 0, numRow - 3, numCol) = Eigen::MatrixXd::Zero(
-        numRow - 3, numCol);  // for XYZ robot, needs to set Euler angles and
-                              // turns, branch as 0
-  }
-  numRow = cart_m_y.rows();
-  numCol = cart_m_y.cols();
-  if (numRow > 3) {
-    cart_m_y.block(3, 0, numRow - 3, numCol) = Eigen::MatrixXd::Zero(
-        numRow - 3, numCol);  // for XYZ robot, needs to set Euler angles and
-                              // turns, branch as 0
-  }
-  numRow = cart_m_z.rows();
-  numCol = cart_m_z.cols();
-  if (numRow > 3) {
-    cart_m_z.block(3, 0, numRow - 3, numCol) = Eigen::MatrixXd::Zero(
-        numRow - 3, numCol);  // for XYZ robot, needs to set Euler angles and
-                              // turns, branch as 0
-  }
-
-  double ret =
-      xyz_calib->CalibrateLaserCoplanar(cart_m_x, cart_m_y, cart_m_z, laserMat_x,
-                                  laserMat_y, laserMat_z, laser_scale);
-  if (ret >= 0) {  // if XYZ calibration sucess
-    if (ur_calib->isCalibrated()) {
-      isDHCalibrated_ = true;  // set XYZ-UR calibration success
-    }
-  }
-  return ret;
-}
 
 double XyzUrCalib::LaserDistanceCalib(
-    const Eigen::VectorXd &base_offset, const Eigen::VectorXd &tool_offset,
-    const EigenDRef<Eigen::Matrix3d> &laser2CartMap,
-    const EigenDRef<Eigen::MatrixXd> &cart_measure,
-    const EigenDRef<Eigen::MatrixXd> &qa_array,
-    const EigenDRef<Eigen::MatrixXd> &laser_measure) {
+    const Eigen::VectorXd& base_offset, const Eigen::VectorXd& tool_offset,
+    const EigenDRef<Eigen::Matrix3d>& laser2CartMap,
+    const EigenDRef<Eigen::MatrixXd>& cart_measure,
+    const EigenDRef<Eigen::MatrixXd>& qa_array,
+    const EigenDRef<Eigen::MatrixXd>& laser_measure) {
   std::ostringstream strs;
   if (!initialized_) {
     strs.str("");
@@ -471,11 +57,11 @@ double XyzUrCalib::LaserDistanceCalib(
 }
 
 Eigen::VectorXd XyzUrCalib::VerifyLaserDistanceCalib(
-    const Eigen::VectorXd &base_offset, const Eigen::VectorXd &tool_offset,
-    const EigenDRef<Eigen::Matrix3d> &laser2CartMat,
-    const EigenDRef<Eigen::MatrixXd> &cart_measure,
-    const EigenDRef<Eigen::MatrixXd> &qa_array,
-    const EigenDRef<Eigen::MatrixXd> &laser_measure) {
+    const Eigen::VectorXd& base_offset, const Eigen::VectorXd& tool_offset,
+    const EigenDRef<Eigen::Matrix3d>& laser2CartMat,
+    const EigenDRef<Eigen::MatrixXd>& cart_measure,
+    const EigenDRef<Eigen::MatrixXd>& qa_array,
+    const EigenDRef<Eigen::MatrixXd>& laser_measure) {
   Eigen::MatrixXd cart_m = cart_measure;
   size_t numRow = cart_m.rows();
   size_t numCol = cart_m.cols();
@@ -489,10 +75,10 @@ Eigen::VectorXd XyzUrCalib::VerifyLaserDistanceCalib(
 }
 
 double XyzUrCalib::DirectMesCalib(
-    const Eigen::VectorXd &base_offset, const Eigen::VectorXd &tool_offset,
-    const EigenDRef<Eigen::MatrixXd> &cart_measure,
-    const EigenDRef<Eigen::MatrixXd> &measureMents,
-    const EigenDRef<Eigen::MatrixXd> &qa_array) {
+    const Eigen::VectorXd& base_offset, const Eigen::VectorXd& tool_offset,
+    const EigenDRef<Eigen::MatrixXd>& cart_measure,
+    const EigenDRef<Eigen::MatrixXd>& measureMents,
+    const EigenDRef<Eigen::MatrixXd>& qa_array) {
   std::ostringstream strs;
   if (!initialized_) {
     strs.str("");
@@ -515,9 +101,9 @@ double XyzUrCalib::DirectMesCalib(
 
 Eigen::VectorXd XyzUrCalib::VerifyDirectMesCalib(
     const Eigen::VectorXd &base_offset, const Eigen::VectorXd &tool_offset,
-    const EigenDRef<Eigen::MatrixXd> &cart_measure,
-    const EigenDRef<Eigen::MatrixXd> &measureMents,
-    const EigenDRef<Eigen::MatrixXd> &qa_array) {
+    const EigenDRef<Eigen::MatrixXd>& cart_measure,
+    const EigenDRef<Eigen::MatrixXd>& measureMents,
+    const EigenDRef<Eigen::MatrixXd>& qa_array) {
   return ur_calib->VerifyDirectMesCalib(base_offset, tool_offset, cart_measure,
                                         measureMents, qa_array);
 }
@@ -527,14 +113,15 @@ int XyzUrCalib::CalibTCPDistMethod(
     const EigenDRef<Eigen::MatrixXd> &qa_array,
     const EigenDRef<Eigen::VectorXd> &measureMents,
     const EigenDRef<Eigen::Vector3d> &mes_normal,
-    EigenDRef<Eigen::VectorXd> *tool_offset) {
-  return -1;
+    EigenDRef<Eigen::VectorXd>& tool_offset) {
+  return xyz_calib->CalibTCPDistMethod(base_offset, qa_array, measureMents, mes_normal,
+                                  tool_offset);
 }
 
 int XyzUrCalib::CalibBaseFrame(const EigenDRef<Eigen::MatrixXd> &jnt_measures,
                                const Eigen::VectorXd &mes_tool,
-                               EigenDRef<Eigen::VectorXd> *orig_base,
-                               EigenDRef<Eigen::VectorXd> *comp_base) {
+                               EigenDRef<Eigen::VectorXd>& orig_base,
+                               EigenDRef<Eigen::VectorXd>& comp_base) {
   std::ostringstream strs;
   if (!initialized_) {
     strs.str("");
@@ -554,14 +141,6 @@ int XyzUrCalib::CalibBaseFrame(const EigenDRef<Eigen::MatrixXd> &jnt_measures,
     LOG_ERROR(strs);
     return -ERR_INPUT_POINTER_NULL;
   }
-  if (!tcp_UR_uncal || !tcp_UR_cal) {
-    strs.str("");
-    strs << GetName() << ":"
-         << "input comp_base is null in function " << __FUNCTION__
-         << " at line " << __LINE__ << std::endl;
-    LOG_ERROR(strs);
-    return -ERR_INPUT_POINTER_NULL;
-  }
 
   Eigen::MatrixXd jnts_UR = jnt_base_measures.block(
       xyz_calib->GetDoF(), 0, ur_calib->GetDoF(), numJnts);
@@ -576,10 +155,6 @@ int XyzUrCalib::CalibBaseFrame(const EigenDRef<Eigen::MatrixXd> &jnt_measures,
   if (ret < 0) {
     return ret;
   }
-
-  // note tcp_UR and tcp_XYZ will be overrided by UR workobj calib
-  (*tcp_UR_uncal).setZero();
-  (*tcp_UR_cal).setZero();
 
   // first check if all jnts are same
   for (size_t j = 1; j < numJnts; j++) {
@@ -657,12 +232,12 @@ int XyzUrCalib::CalibBaseFrame(const EigenDRef<Eigen::MatrixXd> &jnt_measures,
   return 0;
 }
 
-int XyzUrCalib::CpsCartPose(const refPose &p,
-                            const Eigen::VectorXd &canonicalBase, refPose *cp) {
+int XyzUrCalib::CpsCartPose(const refPose& p,
+                            const Eigen::VectorXd& canonicalBase, refPose& cp) {
   return -1;
 }
 
-int XyzUrCalib::CpsJnt(const refPose &p, Eigen::VectorXd *cq) { return -1; }
+int XyzUrCalib::CpsJnt(const refPose& p, Eigen::VectorXd& cq) { return -1; }
 
 int XyzUrCalib::CpsRobPath(
     const Eigen::VectorXd &calibBase, const Eigen::VectorXd &origBase,

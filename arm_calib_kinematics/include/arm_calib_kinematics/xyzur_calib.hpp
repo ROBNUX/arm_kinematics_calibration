@@ -11,7 +11,8 @@ class KINEMATICS_API XyzUrCalib : public XYZ_UR,
                                   public BaseCalibratoin {
  public:
   XyzUrCalib();
-
+  XyzUrCalib(const Eigen::VectorXd& dh_UR,
+             const Eigen::VectorXd& dh_XYZ);
 
   double LaserDistanceCalib(
       const Eigen::VectorXd& base_offset, const Eigen::VectorXd& tool_offset,
@@ -43,33 +44,33 @@ class KINEMATICS_API XyzUrCalib : public XYZ_UR,
                          const EigenDRef<Eigen::MatrixXd>& qa_array,
                          const EigenDRef<Eigen::VectorXd>& measureMents,
                          const EigenDRef<Eigen::Vector3d>& mes_normal,
-                         EigenDRef<Eigen::VectorXd>* tool_offset) override;
+                         EigenDRef<Eigen::VectorXd>& tool_offset) override;
 
   int CalibBaseFrame(const EigenDRef<Eigen::MatrixXd>& jnt_measures,
                      const Eigen::VectorXd& mes_tool,
-                     EigenDRef<Eigen::VectorXd>* orig_base,
-                     EigenDRef<Eigen::VectorXd>* comp_base) override;
+                     EigenDRef<Eigen::VectorXd>& orig_base,
+                     EigenDRef<Eigen::VectorXd>& comp_base) override;
 
   int CpsCartPose(const refPose& p, const Eigen::VectorXd& canonicalBase,
-                  refPose* cp) = 0;
+                  refPose& cp) = 0;
 
-  int CpsJnt(const refPose& p, Eigen::VectorXd* cq) override;
+  int CpsJnt(const refPose& p, Eigen::VectorXd& cq) override;
 
   int CpsRobPath(const Eigen::VectorXd& calibBase,
                  const Eigen::VectorXd& origBase, const Eigen::VectorXd& tool,
                  const EigenDRef<Eigen::MatrixXd>& d_traj,
-                 EigenDRef<Eigen::MatrixXd>* md_traj,
-                 EigenDRef<Eigen::MatrixXd>* d_j_traj,
-                 EigenDRef<Eigen::MatrixXd>* md_j_traj,
-                 EigenDRef<Eigen::MatrixXd>* a_traj) override;
+                 EigenDRef<Eigen::MatrixXd>& md_traj,
+                 EigenDRef<Eigen::MatrixXd>& d_j_traj,
+                 EigenDRef<Eigen::MatrixXd>& md_j_traj,
+                 EigenDRef<Eigen::MatrixXd>& a_traj) override;
 
-  bool GetCalibParamSet(EigenDRef<Eigen::VectorXd>* cal_DH) override;
+  bool GetCalibParamSet(EigenDRef<Eigen::VectorXd>& cal_DH) override;
 
   bool LoadCalibParamSet(const EigenDRef<Eigen::VectorXd>& cal_DH) override;
 
   bool PickSubJacobianForPara(const Eigen::MatrixXd& Jt_p,
                               const Eigen::MatrixXd& Jp_r,
-                              Eigen::MatrixXd* Js_t1, Eigen::MatrixXd* Js_r1,
+                              Eigen::MatrixXd& Js_t1, Eigen::MatrixXd& Js_r1,
                               const bool reduction = false) override;
 
   std::string GetName() const { return std::string("XYZUR calib"); }
