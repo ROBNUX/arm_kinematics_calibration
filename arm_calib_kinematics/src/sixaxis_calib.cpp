@@ -6,10 +6,12 @@ PLUGINLIB_EXPORT_CLASS(kinematics_lib::SixAxisCalib,
                        kinematics_lib::BaseCalibration)
 namespace kinematics_lib {
 
-SixAxisCalib::SixAxisCalib() : SerialArmCalib(6) {}
+SixAxisCalib::SixAxisCalib() : serialArm(6), SixAxis_1(), SerialArmCalib(6) {}
 
-SixAxisCalib::SixAxisCalib(const Eigen::VectorXd &kine_para)
-    : SerialArmCalib(kine_para) {}
+SixAxisCalib::SixAxisCalib(const Eigen::VectorXd& kine_para)
+    : serialArm((kine_para.size() - 7) / 4),
+      SixAxis_1(),
+      SerialArmCalib(kine_para) {}
 
 
 bool SixAxisCalib::PickSubJacobianForPara(const Eigen::MatrixXd &Jp_t,

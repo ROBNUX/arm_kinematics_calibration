@@ -10,10 +10,12 @@ PLUGINLIB_EXPORT_CLASS(kinematics_lib::ScaraCalib,
 
 namespace kinematics_lib {
 
-ScaraCalib::ScaraCalib() : SerialArmCalib(4) {}
+ScaraCalib::ScaraCalib() : serialArm(4), Scara(), SerialArmCalib(4) {}
 
-ScaraCalib::ScaraCalib(const Eigen::VectorXd &kine_para)
-    : SerialArmCalib(kine_para) {}
+ScaraCalib::ScaraCalib(const Eigen::VectorXd& kine_para)
+    : serialArm((kine_para.size() - 7) / 4),
+      Scara(),
+      SerialArmCalib(kine_para) {}
 
 bool ScaraCalib::PickSubJacobianForPara(const Eigen::MatrixXd &Jp_t,
                                         const Eigen::MatrixXd &Jp_r,

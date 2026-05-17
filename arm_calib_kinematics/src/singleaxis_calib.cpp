@@ -8,10 +8,12 @@ PLUGINLIB_EXPORT_CLASS(kinematics_lib::SingleAxisCalib,
 
 namespace kinematics_lib {
 
-SingleAxisCalib::SingleAxisCalib() : SerialArmCalib(1) {}
+SingleAxisCalib::SingleAxisCalib() : serialArm(1), singleAxisModule(), SerialArmCalib(1) {}
 
 SingleAxisCalib::SingleAxisCalib(const Eigen::VectorXd& kine_para)
-    : SerialArmCalib(kine_para) {}
+    : serialArm((kine_para.size() - 7) / 4),
+      singleAxisModule(),
+      SerialArmCalib(kine_para) {}
 
 
 bool SingleAxisCalib::PickSubJacobianForPara(const Eigen::MatrixXd& Jp_t,

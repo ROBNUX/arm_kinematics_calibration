@@ -11,10 +11,10 @@ PLUGINLIB_EXPORT_CLASS(kinematics_lib::SerialArmCalib,
 namespace kinematics_lib {
 
 SerialArmCalib::SerialArmCalib()
-    : serialArm(0, 0), BaseCalibration(), resetCache_(true) {}
+    : serialArm(0), BaseCalibration(), resetCache_(true) {}
 
 SerialArmCalib::SerialArmCalib(const size_t DoF)
-    : serialArm(DoF, DoF),
+    : serialArm(DoF),
       BaseCalibration(),
       alpha_(Eigen::VectorXd::Zero(DoF)),
       alpha_c_(Eigen::VectorXd::Zero(DoF)),
@@ -32,8 +32,8 @@ SerialArmCalib::SerialArmCalib(const size_t DoF)
   }
 }
 
-SerialArmCalib::SerialArmCalib(const Eigen::VectorXd &kine_para)
-    : serialArm((kine_para.size() - 7) / 4, (kine_para.size() - 7) / 4),
+SerialArmCalib::SerialArmCalib(const Eigen::VectorXd& kine_para)
+    : serialArm((kine_para.size() - 7) / 4),
       BaseCalibration(),
       resetCache_(true) {
   SetGeometry(kine_para);
@@ -45,18 +45,16 @@ SerialArmCalib::SerialArmCalib(const Eigen::VectorXd &kine_para)
 
 
 
-bool SerialArmCalib::resetCalibration() {
+void SerialArmCalib::ResetCalibration() {
   alpha_c_ = alpha_;
   a_c_ = a_;
   d_c_ = d_;
   theta_c_ = theta_;
-  beta_c_ = beta_;
   isDHCalibrated_ = false;
   std::ostringstream strs;
   strs.str("");
   strs << GetName() << ": calib model is reset to initial model" << std::endl;
   LOG_INFO(strs);
-  return true;
 }
 
 
@@ -291,12 +289,12 @@ double SerialArmCalib::LaserDistanceCalib(
     // with current set of DHs: kine_para,  compute A,b, and estimation_err
     estimation_err = 0;
     for (size_t i = 0; i < num_measures; i++) {
-      UpdateDH(kine_para, qa_array.col(i), &tmp_para);
+      UpdateDH(kine_para, qa_array.col(i), tmp_para);
       Eigen::MatrixXd Jp_t, Jp_r;
       Pose p;
       // compute the expected values from known canonical kinematic parameters
       // i.e., not-calibrated parameter set
-      int ret = CalcJacobian(tmp_para, &p, &Jp_t, &Jp_r, true);
+      int ret = CalcJacobian(tmp_para, p, Jp_t, Jp_r, true);
       if (ret < 0) {
         return ret;
       }
@@ -342,7 +340,7 @@ double SerialArmCalib::LaserDistanceCalib(
       size_t numParam = A.cols();
       delta_p_old_cache_ = Eigen::VectorXd::Zero(numParam);
     }
-    if (!opt_alg_.OptGradientVec(A, b, &delta_p_old)) {
+    if (!opt_alg_.OptGradientVec(A, b, delta_p_old)) {
       if (delta_p_old.size() == 0) {
         strs.str("");
         strs << "Gradient Decent fails" << std::endl;
@@ -350,11 +348,11 @@ double SerialArmCalib::LaserDistanceCalib(
         return -ERR_CALIB_REG_WRONG_DIM;
       }
       delta_p_old_cache_ = delta_p_old;
-      UpdateDH(delta_p_old, &alpha_tmp, &a_tmp, &theta_tmp, &d_tmp);
+      UpdateDH(delta_p_old, alpha_tmp, a_tmp, theta_tmp, d_tmp);
       resetCache_ = false;
     } else {
-      UpdateDH(delta_p_old - delta_p_old_cache_, &alpha_tmp, &a_tmp, &theta_tmp,
-               &d_tmp);
+      UpdateDH(delta_p_old - delta_p_old_cache_, alpha_tmp, a_tmp, theta_tmp,
+               d_tmp);
       resetCache_ = true;
     }
   }
@@ -406,12 +404,12 @@ double SerialArmCalib::LaserDistanceCalib(
   kine_para.segment(3 * DoF_, DoF_) = d_tmp;
   double orig_err = 0, comp_err = 0;
   for (size_t i = num_measures; i < total_measures; i++) {
-    UpdateDH(kine_para, qa_array.col(i), &tmp_para);
+    UpdateDH(kine_para, qa_array.col(i), tmp_para);
     Eigen::MatrixXd Jp_t, Jp_r;
     Pose p;
     // compute the expected values from known canonical kinematic parameters
     // i.e., not-calibrated parameter set
-    int ret = CalcJacobian(tmp_para, &p, &Jp_t, &Jp_r, true);
+    int ret = CalcJacobian(tmp_para, p, Jp_t, Jp_r, true);
     if (ret < 0) {
       return ret;
     }
@@ -457,11 +455,11 @@ double SerialArmCalib::LaserDistanceCalib(
 }
 
 Eigen::VectorXd SerialArmCalib::VerifyLaserDistanceCalib(
-    const Eigen::VectorXd &base_offset, const Eigen::VectorXd &tool_offset,
-    const EigenDRef<Eigen::Matrix3d> &laser2CartMap,
-    const EigenDRef<Eigen::MatrixXd> &cart_measure,
-    const EigenDRef<Eigen::MatrixXd> &qa_array,
-    const EigenDRef<Eigen::MatrixXd> &laser_measure) {
+    const Eigen::VectorXd& base_offset, const Eigen::VectorXd& tool_offset,
+    const EigenDRef<Eigen::Matrix3d>& laser2CartMap,
+    const EigenDRef<Eigen::MatrixXd>& cart_measure,
+    const EigenDRef<Eigen::MatrixXd>& qa_array,
+    const EigenDRef<Eigen::MatrixXd>& laser_measure) {
   std::ostringstream strs;
   Eigen::VectorXd outData(2);
   // initialize the outData
@@ -509,23 +507,22 @@ Eigen::VectorXd SerialArmCalib::VerifyLaserDistanceCalib(
   Quaternion qb = Quaternion::FromEigenVec(base_offset.block(3, 0, 4, 1));
   Rotation rb(qb);
 
-  Eigen::VectorXd kine_para(5 * DoF_), tmp_para(5 * DoF_);
+  Eigen::VectorXd kine_para(4 * DoF_), tmp_para(4 * DoF_);
   kine_para.segment(0, DoF_) = alpha_c_;
   kine_para.segment(DoF_, DoF_) = a_c_;
   kine_para.segment(2 * DoF_, DoF_) = theta_c_;
   kine_para.segment(3 * DoF_, DoF_) = d_c_;
-  kine_para.segment(4 * DoF_, DoF_) = beta_c_;
 
   Eigen::VectorXd tcp_trans = tool_offset.segment(0, 3);
   Eigen::VectorXd first_p;  // first Cartesian coordinate of measuring tip
   double orig_err = 0, comp_err = 0;
   for (size_t i = 0; i < total_measures; i++) {
-    UpdateDH(kine_para, qa_array.col(i), &tmp_para);
+    UpdateDH(kine_para, qa_array.col(i), tmp_para);
     Eigen::MatrixXd Jp_t, Jp_r;
     Pose p;
     // compute the expected values from known canonical kinematic parameters
     // i.e., not-calibrated parameter set
-    int ret = CalcJacobian(tmp_para, &p, &Jp_t, &Jp_r, true);
+    int ret = CalcJacobian(tmp_para, p, Jp_t, Jp_r, true);
     if (ret < 0) {
       outData(0) = ret;
       return outData;
@@ -637,9 +634,9 @@ double SerialArmCalib::DirectMesCalib(
   opt_alg_.setParam(CALIB_DECENT_STEPSIZE, sam_region_scale_);
   resetCache_ = true;
   // in any case, we start with uncalibrated model
-  Eigen::VectorXd a_tmp = a_c_, alpha_tmp = alpha_c_, beta_tmp = beta_c_,
+  Eigen::VectorXd a_tmp = a_c_, alpha_tmp = alpha_c_,
                   d_tmp = d_c_, theta_tmp = theta_c_;
-  Eigen::VectorXd a_old = a_tmp, alpha_old = alpha_tmp, beta_old = beta_tmp,
+  Eigen::VectorXd a_old = a_tmp, alpha_old = alpha_tmp,
                   d_old = d_tmp, theta_old = theta_tmp;
   // get the translational part of tool offset, only which affect
   // measurement point coordinates
@@ -652,9 +649,9 @@ double SerialArmCalib::DirectMesCalib(
 
   // step 1, using canonical FK to compute the corresponding
   // we need to define one matrix A and one vector b for regression
-  // number of columns 5 * DoF_, alpha_ [DoF_], a_ [DoF_],
-  // theta_ [DoF_], d_ [DoF_], beta_[DoF_]
-  Eigen::MatrixXd A((num_measures - 1) * measDoF, 5 * DoF_);
+  // number of columns 4 * DoF_, alpha_ [DoF_], a_ [DoF_],
+  // theta_ [DoF_], d_ [DoF_]
+  Eigen::MatrixXd A((num_measures - 1) * measDoF, 4 * DoF_);
   Eigen::VectorXd b((num_measures - 1) * measDoF);
   double previous_err = std::numeric_limits<double>::max();
   double estimation_err = 0.5 * previous_err;
@@ -670,28 +667,26 @@ double SerialArmCalib::DirectMesCalib(
       alpha_old = alpha_tmp;
       d_old = d_tmp;
       theta_old = theta_tmp;
-      beta_old = beta_tmp;
       previous_err = estimation_err;
     }
     cur_iter++;
 
-    Eigen::VectorXd kine_para(5 * DoF_),
-        tmp_para(5 * DoF_);  // clearing kine_para, and tmp_para
+    Eigen::VectorXd kine_para(4 * DoF_),
+        tmp_para(4 * DoF_);  // clearing kine_para, and tmp_para
     // fill in the value of alpha_tmp, a_tmp, theta_tmp, d_tmp
     kine_para.segment(0, DoF_) = alpha_tmp;
     kine_para.segment(DoF_, DoF_) = a_tmp;
     kine_para.segment(2 * DoF_, DoF_) = theta_tmp;
     kine_para.segment(3 * DoF_, DoF_) = d_tmp;
-    kine_para.segment(4 * DoF_, DoF_) = beta_tmp;
     estimation_err = 0;
 
     for (size_t i = 0; i < num_measures; i++) {
-      UpdateDH(kine_para, qa_array.col(i), &tmp_para);
+      UpdateDH(kine_para, qa_array.col(i), tmp_para);
       Eigen::MatrixXd Jp_t, Jp_r;
       Pose p;
       // compute the expected values from known canonical kinematic parameters
       // i.e., not-calibrated parameter set
-      int ret = CalcJacobian(tmp_para, &p, &Jp_t, &Jp_r, true);
+      int ret = CalcJacobian(tmp_para, p, Jp_t, Jp_r, true);
       if (ret < 0) {
         return ret;
       }
@@ -708,8 +703,8 @@ double SerialArmCalib::DirectMesCalib(
       Eigen::MatrixXd J = rb.ToEigenMat() * (Jp_t - t_e_hat * Jp_r);
       Eigen::Vector3d dp = measureMents.col(i) - tf.ToEigenVec();
       estimation_err += dp.norm();  // accu_error;
-      A.block((i - 1) * measDoF, 0, measDoF, 5 * DoF_) =
-          J.block(0, 0, measDoF, 5 * DoF_);
+      A.block((i - 1) * measDoF, 0, measDoF, 4 * DoF_) =
+          J.block(0, 0, measDoF, 4 * DoF_);
       b.block((i - 1) * measDoF, 0, measDoF, 1) = dp;
     }
 
@@ -728,7 +723,7 @@ double SerialArmCalib::DirectMesCalib(
       size_t numParam = A.cols();
       delta_p_old_cache_ = Eigen::VectorXd::Zero(numParam);
     }
-    if (!opt_alg_.OptGradientVec(A, b, &delta_p_old)) {
+    if (!opt_alg_.OptGradientVec(A, b, delta_p_old)) {
       if (delta_p_old.size() == 0) {
         strs.str("");
         strs << "Gradient Decent fails" << std::endl;
@@ -736,11 +731,11 @@ double SerialArmCalib::DirectMesCalib(
         return -ERR_CALIB_REG_WRONG_DIM;
       }
       delta_p_old_cache_ = delta_p_old;
-      UpdateDH(delta_p_old, &alpha_tmp, &a_tmp, &theta_tmp, &d_tmp, &beta_tmp);
+      UpdateDH(delta_p_old, alpha_tmp, a_tmp, theta_tmp, d_tmp);
       resetCache_ = false;
     } else {
-      UpdateDH(delta_p_old - delta_p_old_cache_, &alpha_tmp, &a_tmp, &theta_tmp,
-               &d_tmp, &beta_tmp);
+      UpdateDH(delta_p_old - delta_p_old_cache_, alpha_tmp, a_tmp, theta_tmp,
+               d_tmp);
       resetCache_ = true;
     }
   }
@@ -774,33 +769,31 @@ double SerialArmCalib::DirectMesCalib(
   a_c_ = a_old;
   theta_c_ = theta_old;
   d_c_ = d_old;
-  beta_c_ = beta_old;
   strs.str("");
   strs << GetName() << ":"
        << "alpha_c: " << alpha_c_ << ", a_c: " << a_c_
        << ", theta_c: " << theta_c_ << ", d_c: " << d_c_
-       << ", beta_c: " << beta_c_ << std::endl;
+       << std::endl;
   strs << "tool = " << tool_offset << std::endl;
   strs << "base = " << base_offset << std::endl;
   strs << "final matching error=" << previous_err << std::endl;
   LOG_INFO(strs);
   isDHCalibrated_ = true;
 
-  Eigen::VectorXd kine_para(5 * DoF_),
-      tmp_para(5 * DoF_);  // clearing kine_para
+  Eigen::VectorXd kine_para(4 * DoF_),
+      tmp_para(4 * DoF_);  // clearing kine_para
   kine_para.segment(0, DoF_) = alpha_tmp;
   kine_para.segment(DoF_, DoF_) = a_tmp;
   kine_para.segment(2 * DoF_, DoF_) = theta_tmp;
   kine_para.segment(3 * DoF_, DoF_) = d_tmp;
-  kine_para.segment(4 * DoF_, DoF_) = beta_tmp;
   double orig_err = 0, comp_err = 0;
   for (size_t i = num_measures; i < total_measures; i++) {
-    UpdateDH(kine_para, qa_array.col(i), &tmp_para);
+    UpdateDH(kine_para, qa_array.col(i), tmp_para);
     Eigen::MatrixXd Jp_t, Jp_r;
     Pose p;
     // compute the expected values from known canonical kinematic parameters
     // i.e., not-calibrated parameter set
-    int ret = CalcJacobian(tmp_para, &p, &Jp_t, &Jp_r, true);
+    int ret = CalcJacobian(tmp_para, p, Jp_t, Jp_r, true);
     if (ret < 0) {
       return ret;
     }
@@ -891,23 +884,22 @@ Eigen::VectorXd SerialArmCalib::VerifyDirectMesCalib(
   Quaternion qb = Quaternion::FromEigenVec(base_offset.block(3, 0, 4, 1));
   Rotation rb(qb);
 
-  Eigen::VectorXd kine_para(5 * DoF_), tmp_para(5 * DoF_);
+  Eigen::VectorXd kine_para(4 * DoF_), tmp_para(4 * DoF_);
   kine_para.segment(0, DoF_) = alpha_c_;
   kine_para.segment(DoF_, DoF_) = a_c_;
   kine_para.segment(2 * DoF_, DoF_) = theta_c_;
   kine_para.segment(3 * DoF_, DoF_) = d_c_;
-  kine_para.segment(4 * DoF_, DoF_) = beta_c_;
 
   Eigen::VectorXd tcp_trans = tool_offset.segment(0, 3);
   Eigen::VectorXd first_p;  // first Cartesian coordinate of measuring tip
   double orig_err = 0, comp_err = 0;
   for (size_t i = 0; i < total_measures; i++) {
-    UpdateDH(kine_para, qa_array.col(i), &tmp_para);
+    UpdateDH(kine_para, qa_array.col(i), tmp_para);
     Eigen::MatrixXd Jp_t, Jp_r;
     Pose p;
     // compute the expected values from known canonical kinematic parameters
     // i.e., not-calibrated parameter set
-    int ret = CalcJacobian(tmp_para, &p, &Jp_t, &Jp_r, true);
+    int ret = CalcJacobian(tmp_para, p, Jp_t, Jp_r, true);
     if (ret < 0) {
       outData(0) = ret;
       return outData;
@@ -948,11 +940,11 @@ Eigen::VectorXd SerialArmCalib::VerifyDirectMesCalib(
 }
 
 int SerialArmCalib::CalibTCPDistMethod(
-    const Eigen::VectorXd &base_offset,
-    const EigenDRef<Eigen::MatrixXd> &qa_array,
-    const EigenDRef<Eigen::VectorXd> &displace_array,
-    const EigenDRef<Eigen::Vector3d> &init_normal,
-    EigenDRef<Eigen::VectorXd> *final_tool_offset) {
+    const Eigen::VectorXd& base_offset,
+    const EigenDRef<Eigen::MatrixXd>& qa_array,
+    const EigenDRef<Eigen::VectorXd>& displace_array,
+    const EigenDRef<Eigen::Vector3d>& init_normal,
+    EigenDRef<Eigen::VectorXd>& final_tool_offset) {
   std::ostringstream strs;
   // check if robot has been initialized, i.e. we need to know
   // the rough kinematic model
@@ -964,15 +956,6 @@ int SerialArmCalib::CalibTCPDistMethod(
          << ", line " << __LINE__ << std::endl;
     LOG_ERROR(strs);
     return -ERR_ROB_PARAM_NOT_INITIALIZED;
-  }
-  if (!final_tool_offset) {
-    strs.str("");
-    strs << GetName() << ":"
-         << "Input final_tool_offset pointer is null"
-         << " so can not do tool calibration, in function " << __FUNCTION__
-         << ", line " << __LINE__ << std::endl;
-    LOG_ERROR(strs);
-    return -ERR_INPUT_POINTER_NULL;
   }
 
   size_t num_jnt_measures = qa_array.cols();
@@ -997,34 +980,32 @@ int SerialArmCalib::CalibTCPDistMethod(
   Quaternion qb = Quaternion::FromEigenVec(base_offset.block(3, 0, 4, 1));
   Rotation rb(qb);
 
-  Eigen::VectorXd a_tmp, alpha_tmp, beta_tmp, d_tmp, theta_tmp;
+  Eigen::VectorXd a_tmp, alpha_tmp, d_tmp, theta_tmp;
   a_tmp = a_c_;
   alpha_tmp = alpha_c_;
-  beta_tmp = beta_c_;
   d_tmp = d_c_;
   theta_tmp = theta_c_;
 
   Eigen::MatrixXd A(num_jnt_measures - 1, 3);
   Eigen::VectorXd b(num_jnt_measures - 1);
 
-  Eigen::VectorXd kine_para(5 * DoF_), tmp_para(5 * DoF_);
+  Eigen::VectorXd kine_para(4 * DoF_), tmp_para(4 * DoF_);
   kine_para.segment(0, DoF_) = alpha_tmp;
   kine_para.segment(DoF_, DoF_) = a_tmp;
   kine_para.segment(2 * DoF_, DoF_) = theta_tmp;
   kine_para.segment(3 * DoF_, DoF_) = d_tmp;
-  kine_para.segment(4 * DoF_, DoF_) = beta_tmp;
 
   // very first trans vec and rotational matrix
   Eigen::Vector3d p1;
   Eigen::Matrix3d R1;
 
   for (size_t i = 0; i < num_jnt_measures; i++) {
-    UpdateDH(kine_para, qa_array.col(i), &tmp_para);
+    UpdateDH(kine_para, qa_array.col(i), tmp_para);
     Eigen::MatrixXd Jp_t, Jp_r;
     Pose p;
     // compute the expected values from known canonical kinematic parameters
     // i.e., not-calibrated parameter set
-    int ret = CalcJacobian(tmp_para, &p, &Jp_t, &Jp_r, true);
+    int ret = CalcJacobian(tmp_para, p, Jp_t, Jp_r, true);
     if (ret < 0) {
       strs.str("");
       strs << GetName() << ":"
@@ -1072,9 +1053,9 @@ int SerialArmCalib::CalibTCPDistMethod(
     return -1;  // error
   }
   Eigen::VectorXd outV = ATA.inverse() * BB.transpose() * b;
-  final_tool_offset->setZero();  // init to 0
+  final_tool_offset.setZero();  // init to 0
   for (size_t i = 0; i < outV.size(); i++) {
-    (*final_tool_offset)(i) = outV(i);
+    final_tool_offset(i) = outV(i);
   }
 
   // for this displacement measure sensor based tcp calibration, it only suits
@@ -1090,10 +1071,10 @@ int SerialArmCalib::CalibTCPDistMethod(
     Rotation r(v0);
     r.GetQuaternion(&q);
   }
-  (*final_tool_offset)(3) = q.w();
-  (*final_tool_offset)(4) = q.x();
-  (*final_tool_offset)(5) = q.y();
-  (*final_tool_offset)(6) = q.z();
+  final_tool_offset(3) = q.w();
+  final_tool_offset(4) = q.x();
+  final_tool_offset(5) = q.y();
+  final_tool_offset(6) = q.z();
   return 0;
 }
 
@@ -1102,9 +1083,9 @@ void SerialArmCalib::SetUsingCalibratedModel(bool useCalibratedModel) {
 }
 
 int SerialArmCalib::CalibBaseFrame(
-    const EigenDRef<Eigen::MatrixXd> &jnt_base_measures,
-    const Eigen::VectorXd &mes_tool, EigenDRef<Eigen::VectorXd> *orig_base,
-    EigenDRef<Eigen::VectorXd> *comp_base) {
+    const EigenDRef<Eigen::MatrixXd>& jnt_base_measures,
+    const Eigen::VectorXd& mes_tool, EigenDRef<Eigen::VectorXd>& orig_base,
+    EigenDRef<Eigen::VectorXd>& comp_base) {
   std::ostringstream strs;
   size_t numJnts = jnt_base_measures.cols();
   // here orig_base is the workpiece frame, should be reachable by IK
@@ -1114,14 +1095,6 @@ int SerialArmCalib::CalibBaseFrame(
          << "The input vector has wrong dimension in function " << __FUNCTION__
          << ", at line " << __LINE__ << std::endl;
     LOG_ERROR(strs);
-  }
-  if (!orig_base || !comp_base) {
-    strs.str("");
-    strs << GetName() << ":"
-         << "input orig_base or comp_base is null in function " << __FUNCTION__
-         << " at line " << __LINE__ << std::endl;
-    LOG_ERROR(strs);
-    return -ERR_INPUT_POINTER_NULL;
   }
 
   Frame userBase;  // default to be identity transform
@@ -1137,7 +1110,7 @@ int SerialArmCalib::CalibBaseFrame(
   SetUsingCalibratedModel(false);
   double sumYaw = 0, sumPitch = 0, sumRoll = 0;
   for (size_t i = 0; i < numJnts; i++) {
-    int ret = JntToCart(jnt_base_measures.col(i), &ps[i]);
+    int ret = JntToCart(jnt_base_measures.col(i), ps[i]);
     if (ret < 0) {
       strs.str("");
       strs << GetName() << ":"
@@ -1154,14 +1127,14 @@ int SerialArmCalib::CalibBaseFrame(
   }
 
   Rotation newr;
-  orig_base->resize(7);
+  orig_base.resize(7);
   if (numJnts == 3) {  // 3pt method
     Vec newCenter =
         rps[0].getTranslation();  // rps[0] is the origin of the datus reference
                                   // frame of workpiece
-    (*orig_base)(0) = newCenter.x();
-    (*orig_base)(1) = newCenter.y();
-    (*orig_base)(2) = newCenter.z();
+    orig_base(0) = newCenter.x();
+    orig_base(1) = newCenter.y();
+    orig_base(2) = newCenter.z();
 
     Vec newX =
         (rps[1].getTranslation() - rps[0].getTranslation()).NormalizeVec();
@@ -1176,10 +1149,10 @@ int SerialArmCalib::CalibBaseFrame(
     // Rotation newr(newX, newY, newZ);
     Quaternion q;
     newr.GetQuaternion(&q);
-    (*orig_base)(3) = q.w();
-    (*orig_base)(4) = q.x();
-    (*orig_base)(5) = q.y();
-    (*orig_base)(6) = q.z();
+    orig_base(3) = q.w();
+    orig_base(4) = q.x();
+    orig_base(5) = q.y();
+    orig_base(6) = q.z();
     strs.str("");
     strs << GetName() << ":"
          << "3pt base frame computation: uncalibrated frame, trans="
@@ -1242,10 +1215,10 @@ int SerialArmCalib::CalibBaseFrame(
     // Rotation newr(vx, vy, vz);
     Quaternion q;
     newr.GetQuaternion(&q);
-    (*orig_base)(3) = q.w();
-    (*orig_base)(4) = q.x();
-    (*orig_base)(5) = q.y();
-    (*orig_base)(6) = q.z();
+    orig_base(3) = q.w();
+    orig_base(4) = q.x();
+    orig_base(5) = q.y();
+    orig_base(6) = q.z();
 
     // now obtain the origin of the workobj coordinate frame
     Eigen::Vector3d ex = vx.ToEigenVec();
@@ -1270,9 +1243,9 @@ int SerialArmCalib::CalibBaseFrame(
 
     Vec newCenter(meanPt);
     newCenter = newCenter + xcenter * vx + ycenter * vy;
-    (*orig_base)(0) = newCenter.x();
-    (*orig_base)(1) = newCenter.y();
-    (*orig_base)(2) = newCenter.z();
+    orig_base(0) = newCenter.x();
+    orig_base(1) = newCenter.y();
+    orig_base(2) = newCenter.z();
   } else {
     strs.str("");
     strs << GetName() << ":"
@@ -1291,14 +1264,14 @@ int SerialArmCalib::CalibBaseFrame(
             "original base"
          << __FUNCTION__ << ", line " << __LINE__ << std::endl;
     LOG_INFO(strs);
-    *comp_base = *orig_base;
+    comp_base = orig_base;
     return 0;
   }
 
   // first compute calibrated base frame
   SetUsingCalibratedModel(true);
   for (size_t i = 0; i < numJnts; i++) {
-    int ret = JntToCart(jnt_base_measures.col(i), &ps[i]);
+    int ret = JntToCart(jnt_base_measures.col(i), ps[i]);
     if (ret < 0) {
       strs.str("");
       strs << GetName() << ":"
@@ -1313,7 +1286,7 @@ int SerialArmCalib::CalibBaseFrame(
     default_rps.getPoseUnderNewRef(userBase, userTool, &rps[i]);
   }
 
-  comp_base->resize(7);
+  comp_base.resize(7);
   if (numJnts == 3) {
     Vec newCenter =
         rps[0].getTranslation();  // rps[0] is the origin of the datus reference
@@ -1328,15 +1301,15 @@ int SerialArmCalib::CalibBaseFrame(
     newr.UnitY(newY);
     newr.UnitZ(newZ);
 
-    (*comp_base)(0) = newCenter.x();
-    (*comp_base)(1) = newCenter.y();
-    (*comp_base)(2) = newCenter.z();
+    comp_base(0) = newCenter.x();
+    comp_base(1) = newCenter.y();
+    comp_base(2) = newCenter.z();
     Quaternion q;
     newr.GetQuaternion(&q);
-    (*comp_base)(3) = q.w();
-    (*comp_base)(4) = q.x();
-    (*comp_base)(5) = q.y();
-    (*comp_base)(6) = q.z();
+    comp_base(3) = q.w();
+    comp_base(4) = q.x();
+    comp_base(5) = q.y();
+    comp_base(6) = q.z();
   } else if (numJnts == 8) {  // 8 pt method
     // pt 0, 1 determines x axis on the right, 2,3 is parallel to x axis on the
     // left, pt 4, 5 on y axis on the top, and 6, 7 is parallel to y axis on the
@@ -1395,10 +1368,10 @@ int SerialArmCalib::CalibBaseFrame(
 
     Quaternion q;
     newr.GetQuaternion(&q);
-    (*comp_base)(3) = q.w();
-    (*comp_base)(4) = q.x();
-    (*comp_base)(5) = q.y();
-    (*comp_base)(6) = q.z();
+    comp_base(3) = q.w();
+    comp_base(4) = q.x();
+    comp_base(5) = q.y();
+    comp_base(6) = q.z();
 
     // now obtain the origin of the workobj coordinate frame
     Eigen::Vector3d ex = vx.ToEigenVec();
@@ -1424,9 +1397,9 @@ int SerialArmCalib::CalibBaseFrame(
 
     Vec newCenter(meanPt);
     newCenter = newCenter + xcenter * vx + ycenter * vy;
-    (*comp_base)(0) = newCenter.x();
-    (*comp_base)(1) = newCenter.y();
-    (*comp_base)(2) = newCenter.z();
+    comp_base(0) = newCenter.x();
+    comp_base(1) = newCenter.y();
+    comp_base(2) = newCenter.z();
   } else {
     strs.str("");
     strs << GetName() << ":"
@@ -1438,17 +1411,17 @@ int SerialArmCalib::CalibBaseFrame(
   return 0;
 }
 
-int SerialArmCalib::CpsCartPose(const refPose &p,
-                                const Eigen::VectorXd &canonicalBase,
-                                refPose *cp) {
+int SerialArmCalib::CpsCartPose(const refPose& p,
+                                const Eigen::VectorXd& canonicalBase,
+                                refPose& cp) {
   std::ostringstream strs;
-  if (!cp || canonicalBase.rows() != 7) {
+  if (canonicalBase.rows() != 7) {
     strs.str("");
     strs << GetName() << ":"
-         << "input cp is null in function " << __FUNCTION__ << " at line "
-         << __LINE__ << std::endl;
+         << "canonicalBase has wrong dimension in function " << __FUNCTION__
+         << " at line " << __LINE__ << std::endl;
     LOG_ERROR(strs);
-    return -ERR_INPUT_POINTER_NULL;
+    return -ERR_INPUT_PARA_WRONG_DIM;
   }
   Pose ps;
   p.getDefaultPose(&ps);  // get default pose w.r.t. default base and tool
@@ -1458,7 +1431,7 @@ int SerialArmCalib::CpsCartPose(const refPose &p,
   SetUsingCalibratedModel(false);
   // step 1: using canonical IK to compute ideal joint vector
   Eigen::VectorXd init_jnt;
-  int ret = CartToJnt(ps, &init_jnt);
+  int ret = CartToJnt(ps, init_jnt);
   if (ret < 0) {
     strs.str("");
     strs << GetName() << ":"
@@ -1470,7 +1443,7 @@ int SerialArmCalib::CpsCartPose(const refPose &p,
   // step 2, optimize jnt from init_jnt such that |f(cal_para, jnt) - ps|
   // is minimal
   Eigen::VectorXd opt_jnt;
-  ret = OptimizeJntAfterCalib(init_jnt, p, &opt_jnt);
+  ret = OptimizeJntAfterCalib(init_jnt, p, opt_jnt);
   if (ret < 0) {
     strs.str("");
     strs << GetName() << ":"
@@ -1481,7 +1454,7 @@ int SerialArmCalib::CpsCartPose(const refPose &p,
     return ret;
   }
   // step 3, using canonical FK to find the compensated trajectory
-  ret = JntToCart(opt_jnt, &ps);
+  ret = JntToCart(opt_jnt, ps);
   if (ret < 0) {
     strs.str("");
     strs << GetName() << ":"
@@ -1502,20 +1475,12 @@ int SerialArmCalib::CpsCartPose(const refPose &p,
   refPose default_rps;
   default_rps.setDefaultPose(ps);
 
-  default_rps.getPoseUnderNewRef(cpBase, cpTool, cp);
+  default_rps.getPoseUnderNewRef(cpBase, cpTool, &cp);
   return 0;
 }
 
-int SerialArmCalib::CpsJnt(const refPose &p, Eigen::VectorXd *cq) {
+int SerialArmCalib::CpsJnt(const refPose& p, Eigen::VectorXd& cq) {
   std::ostringstream strs;
-  if (!cq) {
-    strs.str("");
-    strs << GetName() << ":"
-         << "input cq is null in function " << __FUNCTION__ << " at line "
-         << __LINE__ << std::endl;
-    LOG_ERROR(strs);
-    return -ERR_INPUT_POINTER_NULL;
-  }
   if (!isDHCalibrated_) {
     strs.str("");
     strs << GetName() << ":"
@@ -1533,7 +1498,7 @@ int SerialArmCalib::CpsJnt(const refPose &p, Eigen::VectorXd *cq) {
   SetUsingCalibratedModel(false);
   // step 1: using canonical IK to compute ideal joint vector
   Eigen::VectorXd init_jnt;
-  int ret = CartToJnt(ps, &init_jnt);
+  int ret = CartToJnt(ps, init_jnt);
   if (ret < 0) {
     strs.str("");
     strs << GetName() << ":"
@@ -1542,7 +1507,7 @@ int SerialArmCalib::CpsJnt(const refPose &p, Eigen::VectorXd *cq) {
     LOG_ERROR(strs);
     return ret;
   }
-  // step 2, optimize jnt from init_jnt such that |f(cal_para, *cq) - ps|
+  // step 2, optimize jnt from init_jnt such that |f(cal_para, cq) - ps|
   // is minimal
   ret = OptimizeJntAfterCalib(init_jnt, p, cq);
   if (ret < 0) {
@@ -1558,20 +1523,11 @@ int SerialArmCalib::CpsJnt(const refPose &p, Eigen::VectorXd *cq) {
 }
 
 int SerialArmCalib::CpsRobPath(
-    const Eigen::VectorXd &calibBase, const Eigen::VectorXd &origBase,
-    const Eigen::VectorXd &tool, const EigenDRef<Eigen::MatrixXd> &d_traj,
-    EigenDRef<Eigen::MatrixXd> *md_traj, EigenDRef<Eigen::MatrixXd> *d_j_traj,
-    EigenDRef<Eigen::MatrixXd> *md_j_traj, EigenDRef<Eigen::MatrixXd> *a_traj) {
+    const Eigen::VectorXd& calibBase, const Eigen::VectorXd& origBase,
+    const Eigen::VectorXd& tool, const EigenDRef<Eigen::MatrixXd>& d_traj,
+    EigenDRef<Eigen::MatrixXd>& md_traj, EigenDRef<Eigen::MatrixXd>& d_j_traj,
+    EigenDRef<Eigen::MatrixXd>& md_j_traj, EigenDRef<Eigen::MatrixXd>& a_traj) {
   std::ostringstream strs;
-  if (!md_traj || !d_j_traj || !md_j_traj || !a_traj) {
-    strs.str("");
-    strs << GetName() << ":"
-         << "Input data pointer is null"
-         << " so can not do calibration, in function " << __FUNCTION__
-         << ", line " << __LINE__ << std::endl;
-    LOG_ERROR(strs);
-    return -ERR_INPUT_POINTER_NULL;
-  }
   if (!isDHCalibrated_) {
     strs.str("");
     strs << GetName() << ":"
@@ -1613,10 +1569,10 @@ int SerialArmCalib::CpsRobPath(
   size_t numPts = d_traj.cols();
   size_t numRows = d_traj.rows();
   // resize output variables
-  md_traj->resize(numRows, numPts);
-  d_j_traj->resize(DoF_, numPts);
-  md_j_traj->resize(DoF_, numPts);
-  a_traj->resize(numRows, numPts);
+  md_traj.resize(numRows, numPts);
+  d_j_traj.resize(DoF_, numPts);
+  md_j_traj.resize(DoF_, numPts);
+  a_traj.resize(numRows, numPts);
 
   for (size_t i = 0; i < numPts; i++) {
     Eigen::VectorXd cur_pt = d_traj.col(i);
@@ -1650,7 +1606,7 @@ int SerialArmCalib::CpsRobPath(
     strs << GetName() << ", pt " << i << ", IK: default cart is "
          << ps.ToString(true) << std::endl;
     LOG_INFO(strs);
-    int ret = CartToJnt(ps, &init_jnt);
+    int ret = CartToJnt(ps, init_jnt);
     if (ret < 0) {
       strs.str("");
       strs << GetName() << " IK error, code  " << ret << ", cart is "
@@ -1678,7 +1634,7 @@ int SerialArmCalib::CpsRobPath(
     strs << GetName() << ", pt " << i << ", IK: uncalib cart is "
          << ps.ToString(true) << std::endl;
     LOG_INFO(strs);
-    ret = CartToJnt(ps, &init_jnt1);
+    ret = CartToJnt(ps, init_jnt1);
     if (ret < 0) {
       strs.str("");
       strs << GetName() << " IK error, code  " << ret << ", uncalib cart is "
@@ -1692,13 +1648,13 @@ int SerialArmCalib::CpsRobPath(
     strs << GetName() << ":"
          << " uncalib init_jnt=" << init_jnt1 << std::endl;
     LOG_INFO(strs);
-    d_j_traj->col(i) = init_jnt1;
+    d_j_traj.col(i) = init_jnt1;
 
     // step 2, optimize jnt from init_jnt such that |f(calibrate_para, opt_jnt)
     // - ps| is minimal
     Eigen::VectorXd opt_jnt;
     // here rps_init is the desired traj. w.r.t calib base and  new tool
-    ret = OptimizeJntAfterCalib(init_jnt, rps_init, &opt_jnt);
+    ret = OptimizeJntAfterCalib(init_jnt, rps_init, opt_jnt);
     if (ret < 0) {
       strs.str("");
       strs << GetName() << ":"
@@ -1707,17 +1663,17 @@ int SerialArmCalib::CpsRobPath(
            << ", can not do error compension, using the original pose instead"
            << __FUNCTION__ << ", line " << __LINE__ << std::endl;
       LOG_ERROR(strs);
-      md_traj->col(i) = d_traj.col(i);  // set same as original one
-      a_traj->col(i) = d_traj.col(i);   // set same as original one
+      md_traj.col(i) = d_traj.col(i);  // set same as original one
+      a_traj.col(i) = d_traj.col(i);   // set same as original one
       // return ret;
     } else {
-      md_j_traj->col(i) = opt_jnt;
+      md_j_traj.col(i) = opt_jnt;
       strs.str("");
       strs << GetName() << ":"
            << " opt_jnt=" << opt_jnt << std::endl;
       LOG_INFO(strs);
       // step 3, using canonical FK to find the compensated trajectory
-      ret = JntToCart(opt_jnt, &ps);
+      ret = JntToCart(opt_jnt, ps);
       if (ret < 0) {
         strs.str("");
         strs << GetName() << ":"
@@ -1734,13 +1690,13 @@ int SerialArmCalib::CpsRobPath(
           oldBase, cpTool,
           &rps);  // get  relative pose w.r.t. oldBase, and new Tool
 
-      md_traj->col(i) =
+      md_traj.col(i) =
           rps.ToEigenVecPose();  // in robot app. program, we use oldBase, and
                                  // canonical kinematics
 
       // step 4, using actual FK to find the actual trajectory
       SetUsingCalibratedModel(true);
-      ret = JntToCart(opt_jnt, &ps);
+      ret = JntToCart(opt_jnt, ps);
       if (ret < 0) {
         strs.str("");
 
@@ -1762,7 +1718,7 @@ int SerialArmCalib::CpsRobPath(
       default_rps.getPoseUnderNewRef(
           cpBase, cpTool, &rps);  // get relative to  new Base, which is used
                                   // for comparing with desired pose
-      a_traj->col(i) = rps.ToEigenVecPose();
+      a_traj.col(i) = rps.ToEigenVecPose();
       strs.str("");
       strs << GetName() << ":"
            << "under new base and tool, desired rps is "
@@ -1775,19 +1731,10 @@ int SerialArmCalib::CpsRobPath(
   return 0;
 }
 
-int SerialArmCalib::HomotopyAlg(const Eigen::VectorXd &init_jnt0,
-                                const Eigen::VectorXd &toolOffset,
-                                Eigen::VectorXd *init_jnt) {
+int SerialArmCalib::HomotopyAlg(const Eigen::VectorXd& init_jnt0,
+                                const Eigen::VectorXd& toolOffset,
+                                Eigen::VectorXd& init_jnt) {
   std::ostringstream strs;
-  if (!init_jnt) {
-    strs.str("");
-    strs << GetName() << ":"
-         << "Input final_plane or final_tool_offset pointer is null"
-         << " so can not do calibration, in function " << __FUNCTION__
-         << ", line " << __LINE__ << std::endl;
-    LOG_ERROR(strs);
-    return -ERR_INPUT_POINTER_NULL;
-  }
   if (!isDHCalibrated_) {
     strs.str("");
     strs << GetName() << ":"
@@ -1803,34 +1750,29 @@ int SerialArmCalib::HomotopyAlg(const Eigen::VectorXd &init_jnt0,
   Eigen::VectorXd diff_a = a_c_ - a_;
   Eigen::VectorXd diff_theta = theta_c_ - theta_;
   Eigen::VectorXd diff_d = d_c_ - d_;
-  Eigen::VectorXd diff_beta = beta_c_ - beta_;
   double norm_dalpha = diff_alpha.norm();
   double norm_da = diff_a.norm();
   double norm_dtheta = diff_theta.norm();
   double norm_dd = diff_d.norm();
-  double norm_dbeta = diff_beta.norm();
 
   int step1 =
-      std::floor(std::max(std::max(norm_dalpha, norm_dtheta), norm_dbeta) /
-                 DH_ANGULAR_EPSILON);
+      std::floor(std::max(norm_dalpha, norm_dtheta) / DH_ANGULAR_EPSILON);
   int step2 = std::floor(std::max(norm_da, norm_dd) / DH_LINEAR_EPSILON);
   int step = std::max(step1, step2);
   Eigen::VectorXd step_diff_alpha = diff_alpha / step;
   Eigen::VectorXd step_diff_a = diff_a / step;
-  Eigen::VectorXd step_diff_beta = diff_beta / step;
   Eigen::VectorXd step_diff_theta = diff_theta / step;
   Eigen::VectorXd step_diff_d = diff_d / step;
 
   // we need a diff para vector to put all above variation together
-  Eigen::VectorXd var_para(5 * DoF_);
+  Eigen::VectorXd var_para(4 * DoF_);
   for (size_t i = 0; i < DoF_; i++) {
-    var_para(5 * i + 0) = step_diff_alpha(i);
-    var_para(5 * i + 1) = step_diff_a(i);
-    var_para(5 * i + 2) = step_diff_theta(i);
-    var_para(5 * i + 3) = step_diff_d(i);
-    var_para(5 * i + 4) = step_diff_beta(i);
+    var_para(4 * i + 0) = step_diff_alpha(i);
+    var_para(4 * i + 1) = step_diff_a(i);
+    var_para(4 * i + 2) = step_diff_theta(i);
+    var_para(4 * i + 3) = step_diff_d(i);
   }
-  Eigen::VectorXd kine_para(5 * DoF_), tmp_para;  // clearing kine_para
+  Eigen::VectorXd kine_para(4 * DoF_), tmp_para;  // clearing kine_para
   // A djnt + B dpara = 0
   Eigen::MatrixXd A, B;
   for (int j = 0; j < step; j++) {
@@ -1839,13 +1781,12 @@ int SerialArmCalib::HomotopyAlg(const Eigen::VectorXd &init_jnt0,
     kine_para.segment(DoF_, DoF_) = a_ + step_diff_a * j;
     kine_para.segment(2 * DoF_, DoF_) = theta_ + step_diff_theta * j;
     kine_para.segment(3 * DoF_, DoF_) = d_ + step_diff_d * j;
-    kine_para.segment(4 * DoF_, DoF_) = beta_ + step_diff_beta * j;
-    UpdateDH(kine_para, jnt0, &tmp_para);
+    UpdateDH(kine_para, jnt0, tmp_para);
     Eigen::MatrixXd Jp_t, Jp_r;
     Pose p;
     // compute the expected values from known canonical kinematic parameters
     // i.e., not-calibrated parameter set
-    int ret = CalcJacobian(tmp_para, &p, &Jp_t, &Jp_r, true);
+    int ret = CalcJacobian(tmp_para, p, Jp_t, Jp_r, true);
     if (ret < 0) {
       return ret;
     }
@@ -1863,7 +1804,7 @@ int SerialArmCalib::HomotopyAlg(const Eigen::VectorXd &init_jnt0,
     Eigen::MatrixXd Js_t, Js_r, Js_t1, Js_r1;
     // pick joint angle related sub jacobians, because we want to
     // find joint angles correspond to calibrated parameters
-    PickSubJacobian(Jt_tmp, Jp_r, &Js_t, &Js_r, true);
+    PickSubJacobian(Jt_tmp, Jp_r, Js_t, Js_r, true);
     size_t rowTrans = Js_t.rows();
     size_t rowRot = Js_r.rows();
     size_t tolCols = Jt_tmp.cols();
@@ -1877,7 +1818,7 @@ int SerialArmCalib::HomotopyAlg(const Eigen::VectorXd &init_jnt0,
     }
 
     // pick translation and rotational jacobian for parameter part.
-    PickSubJacobianForPara(Jt_tmp, Jp_r, &Js_t1, &Js_r1, true);
+    PickSubJacobianForPara(Jt_tmp, Jp_r, Js_t1, Js_r1, true);
     rowTrans = Js_t1.rows();
     rowRot = Js_r1.rows();
     if (rowTrans > 0) {
@@ -1901,22 +1842,13 @@ int SerialArmCalib::HomotopyAlg(const Eigen::VectorXd &init_jnt0,
     Eigen::VectorXd delta_t = -A.inverse() * B * var_para;
     jnt0 += delta_t;
   }
-  *init_jnt = jnt0;
+  init_jnt = jnt0;
   return 0;
 }
-int SerialArmCalib::OptimizeJntAfterCalib(const Eigen::VectorXd &init_jnt0,
-                                          const refPose &ps,
-                                          Eigen::VectorXd *opt_jnt) {
+int SerialArmCalib::OptimizeJntAfterCalib(const Eigen::VectorXd& init_jnt0,
+                                          const refPose& ps,
+                                          Eigen::VectorXd& opt_jnt) {
   std::ostringstream strs;
-  if (!opt_jnt) {
-    strs.str("");
-    strs << GetName() << ":"
-         << "Input final_plane or final_tool_offset pointer is null"
-         << " so can not do calibration, in function " << __FUNCTION__
-         << ", line " << __LINE__ << std::endl;
-    LOG_ERROR(strs);
-    return -ERR_INPUT_POINTER_NULL;
-  }
   if (!isDHCalibrated_) {
     strs.str("");
     strs << GetName() << ":"
@@ -1945,7 +1877,7 @@ int SerialArmCalib::OptimizeJntAfterCalib(const Eigen::VectorXd &init_jnt0,
   // using homotopty method to find a rough solution to
   // f(calib_para, mid_jnt) ~= f(old_para, init_jnt)
   Eigen::VectorXd init_jnt(DoF_);
-  if (HomotopyAlg(init_jnt0, eigToolOffset, &init_jnt) < 0) {
+  if (HomotopyAlg(init_jnt0, eigToolOffset, init_jnt) < 0) {
     strs.str("");
     strs << GetName() << ":"
          << "homotopy algorithm fails in function " << __FUNCTION__ << ", line "
@@ -1975,20 +1907,19 @@ int SerialArmCalib::OptimizeJntAfterCalib(const Eigen::VectorXd &init_jnt0,
   unsigned int numSteps = CALIB_LINE_SEARCH_STEPS;
   double step_size = 1.0 / numSteps;
   int cur_iter = 0;
-  Eigen::VectorXd kine_para, tmp_para;  // fill in calibrated DH set
+  Eigen::VectorXd kine_para(4 * DoF_), tmp_para;  // fill in calibrated DH set
   kine_para.segment(0, DoF_) = alpha_c_;
   kine_para.segment(DoF_, DoF_) = a_c_;
   kine_para.segment(2 * DoF_, DoF_) = theta_c_;
   kine_para.segment(3 * DoF_, DoF_) = d_c_;
-  kine_para.segment(4 * DoF_, DoF_) = beta_c_;
   while (estimation_err > MAX_CALIB_MATCHING_ERR && cur_iter < MAX_CALIB_ITER) {
     cur_iter++;
     // recall tmp_para is the calibrated DH set
-    UpdateDH(kine_para, jnt_tmp, &tmp_para);
+    UpdateDH(kine_para, jnt_tmp, tmp_para);
     Eigen::MatrixXd Jp_t, Jp_r;
     Pose p;
 
-    int ret = CalcJacobian(tmp_para, &p, &Jp_t, &Jp_r, true);
+    int ret = CalcJacobian(tmp_para, p, Jp_t, Jp_r, true);
     if (ret < 0) {
       return ret;
     }
@@ -2043,7 +1974,7 @@ int SerialArmCalib::OptimizeJntAfterCalib(const Eigen::VectorXd &init_jnt0,
         EulerDiff.inverse() * Jp_r;  //  Jr_tmp * d para = errR
     Eigen::MatrixXd Js_t, Js_r;
     // get joint vector related jacobian
-    PickSubJacobian(Jt_tmp, Jr_tmp, &Js_t, &Js_r, true);
+    PickSubJacobian(Jt_tmp, Jr_tmp, Js_t, Js_r, true);
 
     size_t rowTrans = Js_t.rows();
     size_t rowRot = Js_r.rows();
@@ -2054,7 +1985,7 @@ int SerialArmCalib::OptimizeJntAfterCalib(const Eigen::VectorXd &init_jnt0,
     A.block(rowTrans, 0, rowRot, rowTrans + rowRot) = Js_r;
 
     double tmp_err = PickCartErr(
-        errT, errR, &b,
+        errT, errR, b,
         true);  // given full error vector, pick those mathing with robot type
     Eigen::VectorXd delta_t(DoF_);
 
@@ -2074,12 +2005,12 @@ int SerialArmCalib::OptimizeJntAfterCalib(const Eigen::VectorXd &init_jnt0,
     // dynamic step size adjustment
     for (size_t i = 0; i < numSteps; i++) {
       jnt_iter = jnt_tmp + (i + 1) * step_size * delta_t;
-      UpdateDH(kine_para, jnt_iter, &tmp_para);
+      UpdateDH(kine_para, jnt_iter, tmp_para);
       Eigen::MatrixXd Jp_t1, Jp_r1;
       Pose p1;
       // compute the expected values from known canonical kinematic parameters
       // i.e., not-calibrated parameter set
-      ret = CalcJacobian(tmp_para, &p1, &Jp_t1, &Jp_r1, true);
+      ret = CalcJacobian(tmp_para, p1, Jp_t1, Jp_r1, true);
       if (ret < 0) {
         return ret;
       }
@@ -2101,7 +2032,7 @@ int SerialArmCalib::OptimizeJntAfterCalib(const Eigen::VectorXd &init_jnt0,
       errR(1) = pitch_d - pitch;
       errR(2) = yaw_d - yaw;
       double err = PickCartErr(
-          errT, errR, &b,
+          errT, errR, b,
           true);  // given full error vector, pick those mathing with robot type
       if (err < tmp_err) {
         jnt_best_iter = jnt_iter;
@@ -2137,7 +2068,7 @@ int SerialArmCalib::OptimizeJntAfterCalib(const Eigen::VectorXd &init_jnt0,
          << std::endl;
     LOG_INFO(strs);
   }
-  *opt_jnt = jnt_tmp;
+  opt_jnt = jnt_tmp;
   return 0;
 }
 

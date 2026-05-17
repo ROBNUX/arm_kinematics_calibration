@@ -10,10 +10,12 @@ PLUGINLIB_EXPORT_CLASS(kinematics_lib::UjntCalib,
 
 namespace kinematics_lib {
 
-UjntCalib::UjntCalib() : SerialArmCalib(2) {}
+UjntCalib::UjntCalib() : serialArm(2), UJNT(), SerialArmCalib(2) {}
 
-UjntCalib::UjntCalib(const Eigen::VectorXd &kine_para)
-    : SerialArmCalib(kine_para) {}
+UjntCalib::UjntCalib(const Eigen::VectorXd& kine_para)
+    : serialArm((kine_para.size() - 7) / 4),
+      UJNT(),
+      SerialArmCalib(kine_para) {}
 
 bool UjntCalib::PickRotSubJacobian(const Eigen::MatrixXd &Jp_t,
                                    const Eigen::MatrixXd &Jp_r,

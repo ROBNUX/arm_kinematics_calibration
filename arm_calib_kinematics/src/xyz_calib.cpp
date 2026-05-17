@@ -10,10 +10,12 @@ PLUGINLIB_EXPORT_CLASS(kinematics_lib::XyzGantryCalib,
 
 namespace kinematics_lib {
 
-XyzGantryCalib::XyzGantryCalib() : SerialArmCalib(3) {}
+XyzGantryCalib::XyzGantryCalib() : serialArm(3), XYZGantry(), SerialArmCalib(3) {}
 
-XyzGantryCalib::XyzGantryCalib(const Eigen::VectorXd &kine_para)
-    : SerialArmCalib(kine_para) {}
+XyzGantryCalib::XyzGantryCalib(const Eigen::VectorXd& kine_para)
+    : serialArm((kine_para.size() - 7) / 4),
+      XYZGantry(),
+      SerialArmCalib(kine_para) {}
 
 
 bool XyzGantryCalib::PickSubJacobianForPara(const Eigen::MatrixXd& Jp_t,

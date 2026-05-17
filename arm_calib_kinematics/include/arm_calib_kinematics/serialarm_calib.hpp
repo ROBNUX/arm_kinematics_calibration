@@ -14,13 +14,16 @@
 
 namespace kinematics_lib {
 
-class KINEMATICS_API SerialArmCalib : public serialArm,
+class KINEMATICS_API SerialArmCalib : public virtual serialArm,
                                       public BaseCalibration {
  public:
   SerialArmCalib();
   SerialArmCalib(size_t DoF);
   SerialArmCalib(const Eigen::VectorXd& kine_para);
 
+  // expose base-class 3-arg UpdateDH overloads so they aren't hidden by the
+  // 5-arg overload below
+  using serialArm::UpdateDH;
 
   /*
    * @brief given a whole vector of DH parameter step vector (from matrix
@@ -61,7 +64,7 @@ class KINEMATICS_API SerialArmCalib : public serialArm,
   bool LoadCalibParamSet(const EigenDRef<Eigen::VectorXd>& cal_DH) override;
 
 
-  bool resetCalibration() override;
+  void ResetCalibration() override;
 
   double LaserDistanceCalib(
       const Eigen::VectorXd& base_offset, const Eigen::VectorXd& tool_offset,

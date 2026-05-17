@@ -4,11 +4,11 @@
 #include "arm_calib_kinematics/serialarm_calib.hpp"
 #include "arm_calib_kinematics/ujnt_calib.hpp"
 #include "arm_calib_kinematics/xyz_calib.hpp"
-#include "robnux_kinematics_map/xyz_ur.hpp"
+#include "robnux_kinematics_map/XYZ_UR.hpp"
 namespace kinematics_lib {
 // separate-mode XYZ + UR
 class KINEMATICS_API XyzUrCalib : public XYZ_UR,
-                                  public BaseCalibratoin {
+                                  public BaseCalibration {
  public:
   XyzUrCalib();
   XyzUrCalib(const Eigen::VectorXd& dh_UR,
@@ -52,7 +52,7 @@ class KINEMATICS_API XyzUrCalib : public XYZ_UR,
                      EigenDRef<Eigen::VectorXd>& comp_base) override;
 
   int CpsCartPose(const refPose& p, const Eigen::VectorXd& canonicalBase,
-                  refPose& cp) = 0;
+                  refPose& cp) override;
 
   int CpsJnt(const refPose& p, Eigen::VectorXd& cq) override;
 

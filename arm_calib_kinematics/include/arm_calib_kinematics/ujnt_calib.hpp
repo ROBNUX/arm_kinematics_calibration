@@ -8,10 +8,11 @@
 
 namespace kinematics_lib {
 //! UJNT (R-R) modules, which combined with XYZ constitutes the 5-axis module
-class KINEMATICS_API UjntCalib : public UJnt,
+class KINEMATICS_API UjntCalib : public UJNT,
                                  public SerialArmCalib {
  public:
   UjntCalib();
+  UjntCalib(const Eigen::VectorXd& kine_para);
 
   /*
    * @brief pick a submatrix of the full rotational Jacobian that corresponds to
