@@ -22,7 +22,7 @@ add_library(${PROJECT_NAME} SHARED
   src/serialarm_calib.cpp
   src/ujnt_calib.cpp
   src/xyz_calib.cpp
-  # src/xyzur_calib.cpp  # temporarily excluded; needs broader cleanup
+  src/xyzur_calib.cpp
   src/scara_calib.cpp
   src/sixaxis_calib.cpp
   src/singleaxis_calib.cpp
