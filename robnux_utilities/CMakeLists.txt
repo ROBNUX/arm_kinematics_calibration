@@ -52,4 +52,10 @@ ament_export_dependencies(
 )
 ament_export_targets(${PROJECT_NAME} HAS_LIBRARY_TARGET)
 
+if(BUILD_TESTING)
+  find_package(ament_cmake_gtest REQUIRED)
+  ament_add_gtest(test_utilities test/test_utilities.cpp)
+  target_link_libraries(test_utilities ${PROJECT_NAME})
+endif()
+
 ament_package()

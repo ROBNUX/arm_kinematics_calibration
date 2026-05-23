@@ -88,6 +88,39 @@ bool py_LoadCalibParamSet(BaseCalibration& self,
   return self.LoadCalibParamSet(ref);
 }
 
+// Templated wrappers, one instantiation per concrete subclass. Binding these
+// directly on the concrete py::class_ avoids pybind11's multi-step chain
+// upcast through SerialArmCalib's virtual `serialArm` base, which produces an
+// incorrect BaseCalibration* offset for ScaraCalib / SixAxisCalib /
+// SingleAxisCalib / UjntCalib / XyzGantryCalib instances. The C++ static_cast
+// `BaseCalibration& base = self` resolves the offset correctly in one shot
+// because the compiler knows the most-derived type.
+
+template <typename Derived>
+void py_setOptParam_T(Derived& self, const Eigen::VectorXd& opt_param) {
+  BaseCalibration& base = self;
+  Eigen::VectorXd local = opt_param;
+  EigenDRef<Eigen::VectorXd> ref(local);
+  base.setOptParam(ref);
+}
+
+template <typename Derived>
+bool py_LoadCalibParamSet_T(Derived& self, const Eigen::VectorXd& cal_DH) {
+  BaseCalibration& base = self;
+  Eigen::VectorXd local = cal_DH;
+  EigenDRef<Eigen::VectorXd> ref(local);
+  return base.LoadCalibParamSet(ref);
+}
+
+template <typename Derived>
+py::tuple py_GetCalibParamSet_T(Derived& self, Eigen::Index param_size) {
+  BaseCalibration& base = self;
+  Eigen::VectorXd cal_DH = Eigen::VectorXd::Zero(param_size);
+  EigenDRef<Eigen::VectorXd> ref(cal_DH);
+  bool ok = base.GetCalibParamSet(ref);
+  return py::make_tuple(ok, cal_DH);
+}
+
 py::tuple py_CpsCartPose(BaseCalibration& self, const refPose& p,
                          const Eigen::VectorXd& canonicalBase) {
   refPose cp;
@@ -199,30 +232,64 @@ PYBIND11_MODULE(arm_calib_commands, m) {
       .def("GetName", &SerialArmCalib::GetName)
       .def("ResetCalibration", &SerialArmCalib::ResetCalibration);
 
+  // For each concrete subclass that reaches BaseCalibration via
+  // SerialArmCalib's virtual-inheritance chain, override the three
+  // member-accessing methods with their direct (templated) variant. Pybind11
+  // resolves the upcast in one step instead of composing through the
+  // intermediate base; see py_*_T comments above and arm_calib_commands' xfail
+  // history.
+
   py::class_<ScaraCalib, SerialArmCalib>(m, "ScaraCalib")
       .def(py::init<>())
       .def(py::init<const Eigen::VectorXd&>(), py::arg("kine_para"))
-      .def("GetName", &ScaraCalib::GetName);
+      .def("GetName", &ScaraCalib::GetName)
+      .def("setOptParam", &py_setOptParam_T<ScaraCalib>, py::arg("opt_param"))
+      .def("LoadCalibParamSet", &py_LoadCalibParamSet_T<ScaraCalib>,
+           py::arg("cal_DH"))
+      .def("GetCalibParamSet", &py_GetCalibParamSet_T<ScaraCalib>,
+           py::arg("param_size"));
 
   py::class_<SixAxisCalib, SerialArmCalib>(m, "SixAxisCalib")
       .def(py::init<>())
       .def(py::init<const Eigen::VectorXd&>(), py::arg("kine_para"))
-      .def("GetName", &SixAxisCalib::GetName);
+      .def("GetName", &SixAxisCalib::GetName)
+      .def("setOptParam", &py_setOptParam_T<SixAxisCalib>, py::arg("opt_param"))
+      .def("LoadCalibParamSet", &py_LoadCalibParamSet_T<SixAxisCalib>,
+           py::arg("cal_DH"))
+      .def("GetCalibParamSet", &py_GetCalibParamSet_T<SixAxisCalib>,
+           py::arg("param_size"));
 
   py::class_<SingleAxisCalib, SerialArmCalib>(m, "SingleAxisCalib")
       .def(py::init<>())
       .def(py::init<const Eigen::VectorXd&>(), py::arg("kine_para"))
-      .def("GetName", &SingleAxisCalib::GetName);
+      .def("GetName", &SingleAxisCalib::GetName)
+      .def("setOptParam", &py_setOptParam_T<SingleAxisCalib>,
+           py::arg("opt_param"))
+      .def("LoadCalibParamSet", &py_LoadCalibParamSet_T<SingleAxisCalib>,
+           py::arg("cal_DH"))
+      .def("GetCalibParamSet", &py_GetCalibParamSet_T<SingleAxisCalib>,
+           py::arg("param_size"));
 
   py::class_<UjntCalib, SerialArmCalib>(m, "UjntCalib")
       .def(py::init<>())
       .def(py::init<const Eigen::VectorXd&>(), py::arg("kine_para"))
-      .def("GetName", &UjntCalib::GetName);
+      .def("GetName", &UjntCalib::GetName)
+      .def("setOptParam", &py_setOptParam_T<UjntCalib>, py::arg("opt_param"))
+      .def("LoadCalibParamSet", &py_LoadCalibParamSet_T<UjntCalib>,
+           py::arg("cal_DH"))
+      .def("GetCalibParamSet", &py_GetCalibParamSet_T<UjntCalib>,
+           py::arg("param_size"));
 
   py::class_<XyzGantryCalib, SerialArmCalib>(m, "XyzGantryCalib")
       .def(py::init<>())
       .def(py::init<const Eigen::VectorXd&>(), py::arg("kine_para"))
-      .def("GetName", &XyzGantryCalib::GetName);
+      .def("GetName", &XyzGantryCalib::GetName)
+      .def("setOptParam", &py_setOptParam_T<XyzGantryCalib>,
+           py::arg("opt_param"))
+      .def("LoadCalibParamSet", &py_LoadCalibParamSet_T<XyzGantryCalib>,
+           py::arg("cal_DH"))
+      .def("GetCalibParamSet", &py_GetCalibParamSet_T<XyzGantryCalib>,
+           py::arg("param_size"));
 
   py::class_<XyzUrCalib, BaseCalibration>(m, "XyzUrCalib")
       .def(py::init<>())

@@ -71,20 +71,14 @@ def test_get_name(concrete_calibrations, class_name, expected_name):
     assert concrete_calibrations[class_name].GetName() == expected_name
 
 
-@pytest.mark.xfail(
-    reason=(
-        "Calling setOptParam through pybind11 on a concrete subclass that "
-        "inherits BaseCalibration via a virtual base (serialArm) currently "
-        "segfaults; the equivalent C++ gtest (SetOptParamAcceptsSamParams) "
-        "passes, so the issue is in how the bound self is upcast. Track and "
-        "remove this xfail once the binding pattern is corrected."
-    ),
-    strict=False,
-    run=False,  # do not actually invoke; the segfault would abort the suite
-)
 def test_set_opt_param_does_not_raise(concrete_calibrations):
+    # Each concrete subclass binds setOptParam directly (via a templated
+    # wrapper) so that pybind11 doesn't have to compose the upcast chain
+    # through SerialArmCalib's virtual `serialArm` base.
     opt = np.array([0.0, 1.0], dtype=np.float64)  # [Sam method, region scale]
-    concrete_calibrations["ScaraCalib"].setOptParam(opt)
+    for name in ("ScaraCalib", "SixAxisCalib", "SingleAxisCalib",
+                 "UjntCalib", "XyzGantryCalib"):
+        concrete_calibrations[name].setOptParam(opt)
 
 
 def test_cross_module_types_available():
@@ -102,25 +96,22 @@ def test_cross_module_types_available():
     assert base_out.getTranslation().x() == pytest.approx(1.0)
 
 
-_MI_XFAIL_REASON = (
-    "BaseCalibration methods invoked on a concrete subclass that inherits "
-    "via a virtual base (serialArm) currently segfault through the pybind11 "
-    "upcast. The same operations work via direct C++ calls (see gtest "
-    "test_calib_classes). Remove this xfail once the binding upcast is fixed."
-)
-
-
-@pytest.mark.xfail(reason=_MI_XFAIL_REASON, strict=False, run=False)
 def test_load_calib_param_set_returns_bool(concrete_calibrations):
-    scara = concrete_calibrations["ScaraCalib"]
-    cal_dh = np.zeros(0, dtype=np.float64)
-    result = scara.LoadCalibParamSet(cal_dh)
-    assert isinstance(result, bool)
+    # LoadCalibParamSet is now bound directly on each affected concrete class
+    # (see py_LoadCalibParamSet_T<Derived>); pybind11 no longer has to compose
+    # the upcast chain through SerialArmCalib's virtual base.
+    for name in ("ScaraCalib", "SixAxisCalib", "SingleAxisCalib",
+                 "UjntCalib", "XyzGantryCalib"):
+        cal_dh = np.zeros(0, dtype=np.float64)
+        result = concrete_calibrations[name].LoadCalibParamSet(cal_dh)
+        assert isinstance(result, bool)
 
 
-@pytest.mark.xfail(reason=_MI_XFAIL_REASON, strict=False, run=False)
 def test_get_calib_param_set_returns_tuple(concrete_calibrations):
-    scara = concrete_calibrations["ScaraCalib"]
-    ok, vec = scara.GetCalibParamSet(0)
-    assert isinstance(ok, bool)
-    assert isinstance(vec, np.ndarray)
+    # GetCalibParamSet is similarly bound directly on each affected concrete
+    # class.
+    for name in ("ScaraCalib", "SixAxisCalib", "SingleAxisCalib",
+                 "UjntCalib", "XyzGantryCalib"):
+        ok, vec = concrete_calibrations[name].GetCalibParamSet(0)
+        assert isinstance(ok, bool)
+        assert isinstance(vec, np.ndarray)
