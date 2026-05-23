@@ -1,8 +1,8 @@
 <?xml version="1.0"?>
 <package format="3">
-    <name>rob_commands</name>
+    <name>arm_calib_commands</name>
     <version>0.0.1</version>
-    <description>robot command python binding package</description>
+    <description>Python bindings for the arm_calib_kinematics calibration API</description>
 
     <maintainer email="leon@robnux.net">Leon Liu, ROBNUX LLC</maintainer>
 
@@ -11,23 +11,34 @@
     <buildtool_depend>ament_cmake</buildtool_depend>
     <buildtool_depend>ament_cmake_python</buildtool_depend>
     <buildtool_depend>pybind11_cmake</buildtool_depend>
-    
-    <build_depend>sensor_msgs</build_depend>
-    <build_depend>geometry_msgs</build_depend>
-    <build_depend>std_msgs</build_depend>
-    <build_depend>dsl_intp</build_depend>
-    <build_depend>scurve_lib</build_depend>
+
+    <build_depend>arm_calib_kinematics</build_depend>
+    <build_depend>robnux_kinematics_map</build_depend>
+    <build_depend>robnux_kdl_common</build_depend>
+    <build_depend>robnux_utilities</build_depend>
+    <build_depend>simple_motion_logger</build_depend>
+    <build_depend>pluginlib</build_depend>
     <build_depend>Eigen3</build_depend>
     <build_depend>pybind11</build_depend>
     <build_depend>python3-dev</build_depend>
-    
-    <exec_depend>sensor_msgs</exec_depend>
-    <exec_depend>geometry_msgs</exec_depend>
-    <exec_depend>std_msgs</exec_depend>
-    <exec_depend>dsl_intp</exec_depend>
-    <exec_depend>scurve_lib</exec_depend>
-    
+
+    <exec_depend>arm_calib_kinematics</exec_depend>
+    <exec_depend>robnux_kinematics_map</exec_depend>
+    <exec_depend>robnux_kdl_common</exec_depend>
+    <exec_depend>robnux_utilities</exec_depend>
+    <exec_depend>simple_motion_logger</exec_depend>
+    <exec_depend>pluginlib</exec_depend>
+    <!-- Runtime soft dep: this module does `py::module_::import("rob_motion_commands")`
+         at load time so that its registered C++ types (refPose, Pose, Frame, ...)
+         are available to calibration bindings (CpsCartPose, CpsJnt, ...). -->
+    <exec_depend>rob_motion_commands</exec_depend>
+
+    <test_depend>ament_cmake_gtest</test_depend>
+    <test_depend>ament_cmake_pytest</test_depend>
+    <test_depend>python3-pytest</test_depend>
+    <test_depend>python3-numpy</test_depend>
+
     <export>
+        <build_type>ament_cmake</build_type>
     </export>
 </package>
-    

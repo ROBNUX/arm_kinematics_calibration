@@ -29,7 +29,7 @@ bool  RPE_Utility::ReadCSVFile(const std::string fileName,
       LOG_INFO(strs);
    
       //strs.str("");
-      file_data->resize(numRows, numCols);
+      file_data.resize(numRows, numCols);
       for (size_t i=0; i< numRows; i++) {
          for (size_t j=0; j < numCols; j++) {
             file_data(i, j) = data[i][j];
