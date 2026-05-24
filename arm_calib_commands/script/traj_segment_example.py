@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 """
 Simple example that fits general trajectory segment, given the start and
 end positions/velocities. Start and end acceleration/jerk are assumed to be zero.

@@ -1,6 +1,6 @@
 from matplotlib import pyplot as plt
 import numpy as np
-from rob_commands import *
+import rob_motion_commands as m
 
 joint_colors = ['r', 'b', 'g', 'c', 'm', 'y', 'k', 'w']
 
@@ -65,7 +65,7 @@ def fit_and_plot_segment(npoints, p_start, p_end, v_start, v_end, p_max, v_max, 
     velocity=np.zeros((npoints,1), dtype=float)
     acceleration=np.zeros((npoints,1), dtype=float)
     jerk =np.zeros((npoints,1), dtype=float)
-    boundaries=ScurvePlanner.FitScurveSegment(p_start, p_end, v_start, v_end, p_max, v_max, a_max, j_max, npoints, plot_times, position, velocity, acceleration, jerk)
+    boundaries=m.ScurvePlanner.FitScurveSegment(p_start, p_end, v_start, v_end, p_max, v_max, a_max, j_max, npoints, plot_times, position, velocity, acceleration, jerk)
     plot_segment(plt.figure(), plot_times, boundaries, position, velocity, acceleration, jerk, v_max=v_max, a_max=a_max, j_max=j_max)
     plt.show()
 
