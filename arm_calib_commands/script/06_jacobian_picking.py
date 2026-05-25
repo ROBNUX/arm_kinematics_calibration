@@ -42,12 +42,15 @@ rng = np.random.default_rng(99)
 # Craig DH helpers
 # ---------------------------------------------------------------------------
 
+_BASE = [0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0]   # identity base offset (7 elements)
+
+
 def scara_kine_para() -> np.ndarray:
     alpha = [0.0, 0.0, math.pi, 0.0]
     a     = [0.30, 0.30, 0.0, 0.0]
     theta = [0.0, 0.0, 0.0, 0.0]
     d     = [0.30, 0.0, 0.20, 0.05]
-    return np.array(alpha + a + theta + d, dtype=np.float64)
+    return np.array(alpha + a + theta + d + _BASE, dtype=np.float64)
 
 
 def sixaxis_kine_para() -> np.ndarray:
@@ -55,7 +58,7 @@ def sixaxis_kine_para() -> np.ndarray:
     a     = [0.0,  0.075,      0.365, 0.09,       0.0,        0.0]
     theta = [0.0,  0.0,        0.0,   0.0,        0.0,        0.0]
     d     = [0.295, 0.0,       0.0,   0.340,      0.0,        0.095]
-    return np.array(alpha + a + theta + d, dtype=np.float64)
+    return np.array(alpha + a + theta + d + _BASE, dtype=np.float64)
 
 
 def demo_pick(name: str, calib_obj, dof: int, n_param_cols: int) -> None:
@@ -100,10 +103,10 @@ def main() -> int:
         ("ScaraCalib",      c.ScaraCalib(scara_kine_para()),      4,  4 * 4),
         ("SixAxisCalib",    c.SixAxisCalib(sixaxis_kine_para()),  6,  4 * 6),
         ("SingleAxisCalib", c.SingleAxisCalib(
-             np.array([0.0, 0.0, 0.0, 0.0])),                    1,  4 * 1),
+             np.array([0.0, 0.0, 0.0, 0.0] + _BASE)),            1,  4 * 1),
         ("UjntCalib",       c.UjntCalib(
              np.array([0.0, math.pi/2, 0.15, 0.0,
-                       0.0, 0.0,       0.30, 0.0])),              2,  4 * 2),
+                       0.0, 0.0,       0.30, 0.0] + _BASE)),      2,  4 * 2),
     ]
 
     for name, obj, dof, n_params in cases:

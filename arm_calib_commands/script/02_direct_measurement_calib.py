@@ -40,14 +40,17 @@ rng = np.random.default_rng(42)
 
 # ---------------------------------------------------------------------------
 # SCARA DH parameters (4 DOF)
-#   kine_para = [alpha x4, a x4, theta x4, d x4]
+#   kine_para = [alpha x4, a x4, theta x4, d x4, tx, ty, tz, qw, qx, qy, qz]
+#   The trailing 7-element identity base offset lets the constructor infer
+#   DoF = (size - 7) / 4.
 # ---------------------------------------------------------------------------
 DOF = 4
 ALPHA = np.array([0.0, 0.0, math.pi, 0.0])
 A     = np.array([0.30, 0.30, 0.0, 0.0])
 THETA = np.array([0.0, 0.0, 0.0, 0.0])
 D     = np.array([0.30, 0.0, 0.20, 0.05])
-KINE_PARA = np.concatenate([ALPHA, A, THETA, D])
+BASE  = np.array([0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0])
+KINE_PARA = np.concatenate([ALPHA, A, THETA, D, BASE])
 
 # Identity base and tool offsets: [tx, ty, tz, qw, qx, qy, qz]
 IDENTITY_FRAME = np.array([0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0], dtype=np.float64)

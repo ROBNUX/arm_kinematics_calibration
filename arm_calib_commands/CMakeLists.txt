@@ -36,6 +36,19 @@ install(TARGETS ${PROJECT_NAME}
   DESTINATION "${PYTHON_INSTALL_DIR}"
 )
 
+install(PROGRAMS
+  script/01_calib_classes.py
+  script/02_direct_measurement_calib.py
+  script/03_tcp_and_base_calib.py
+  script/04_laser_distance_calib.py
+  script/05_pose_path_compensation.py
+  script/06_jacobian_picking.py
+  script/traj_plot.py
+  script/traj_segment_example.py
+  script/generate_exception_test_cases.py
+  DESTINATION lib/${PROJECT_NAME}
+)
+
 if(BUILD_TESTING)
   find_package(ament_cmake_gtest REQUIRED)
   find_package(ament_cmake_pytest REQUIRED)

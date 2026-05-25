@@ -16,14 +16,6 @@ SerialArmCalib::SerialArmCalib()
 SerialArmCalib::SerialArmCalib(const size_t DoF)
     : serialArm(DoF),
       BaseCalibration(),
-      alpha_(Eigen::VectorXd::Zero(DoF)),
-      alpha_c_(Eigen::VectorXd::Zero(DoF)),
-      a_(Eigen::VectorXd::Zero(DoF)),
-      a_c_(Eigen::VectorXd::Zero(DoF)),
-      d_(Eigen::VectorXd::Zero(DoF)),
-      d_c_(Eigen::VectorXd::Zero(DoF)),
-      theta_(Eigen::VectorXd::Zero(DoF)),
-      theta_c_(Eigen::VectorXd::Zero(DoF)),
       pitch_(Eigen::VectorXd::Ones(DoF)),
       resetCache_(true) {
   jnt_names_.resize(DoF);
@@ -35,6 +27,7 @@ SerialArmCalib::SerialArmCalib(const size_t DoF)
 SerialArmCalib::SerialArmCalib(const Eigen::VectorXd& kine_para)
     : serialArm((kine_para.size() - 7) / 4),
       BaseCalibration(),
+      pitch_(Eigen::VectorXd::Ones((kine_para.size() - 7) / 4)),
       resetCache_(true) {
   SetGeometry(kine_para);
   jnt_names_.resize(DoF_);
@@ -150,7 +143,7 @@ bool SerialArmCalib::LoadCalibParamSet(
        << ", pitch=" << pitch_ << std::endl;
   LOG_INFO(strs);
 
-  Eigen::VectorXd baseoff = cal_DH.segment(5 * DoF_, 7);
+  Eigen::VectorXd baseoff = cal_DH.segment(4 * DoF_, 7);
   Vec t(baseoff.segment(0, 3));
   Quaternion q(baseoff(3), baseoff(4), baseoff(5), baseoff(6));
   defaultBaseOff_.setTranslation(t);

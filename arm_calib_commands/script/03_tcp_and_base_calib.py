@@ -49,7 +49,8 @@ ALPHA = np.array([0.0, 0.0, math.pi, 0.0])
 A     = np.array([0.30, 0.30, 0.0, 0.0])
 THETA = np.array([0.0, 0.0, 0.0, 0.0])
 D     = np.array([0.30, 0.0, 0.20, 0.05])
-KINE_PARA = np.concatenate([ALPHA, A, THETA, D])
+BASE  = np.array([0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0])
+KINE_PARA = np.concatenate([ALPHA, A, THETA, D, BASE])
 
 IDENTITY_FRAME = np.array([0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0], dtype=np.float64)
 

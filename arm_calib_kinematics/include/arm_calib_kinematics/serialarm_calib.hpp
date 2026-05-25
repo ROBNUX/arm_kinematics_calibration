@@ -156,34 +156,12 @@ class KINEMATICS_API SerialArmCalib : public virtual serialArm,
    */
   void SetUsingCalibratedModel(bool useCalibratedModel);
 
-  /*
-   * @brief extended DH parameters
-   * (alpha_, a_, theta_, d_) are parameter vectors in Craig DH
-   * convention, (alpha_c_, a_c_, theta_c_, d_c_), are parameters after
-   * calibration
-   *
-   * Note: for scara robot d_[2], theta_[0], theta_[1], theta_[3]
-   * are only offset, the actual joints are feedback joint angles from motors
-   * plus the above 4 offsets: e.g.,
-   *  theta[0] = actual_j[0] = theta_[0] + jnt_feedback[0]
-   *  theta[1] = actual_j[1] = theta_[1] + jnt_feedback[1]
-   *  d[2] = actual_j[2] = d_[2] + jnt_feedback[2]
-   *  theta[3] = actual_j[3] = theta_[3] + jnt_feedback[3]
-   * parameters to be calibrated include
-   * alpha[0], alpha[1], alpha[2], alpha[3] (are actual values)
-   * a[0], a[1], a[2], a[3] (are actual values)
-   *  d_[0], d_[1], d_[2], d_[3] (d_[2] is initial value of prismatic joint)
-   * theta_[0], theta_[1], theta_[2], theta_[3] (theta_[0], theta_[1],
-   * theta_[3] are initial values of angular values)
-   */
-  Eigen::VectorXd alpha_, alpha_c_;
-  // a offset vector in Craig DH convention
-  Eigen::VectorXd a_, a_c_;
-  // d offset vector in Craig DH convention
-  Eigen::VectorXd d_, d_c_;
-  // theta_ in Craig DH convention
-  Eigen::VectorXd theta_, theta_c_;
-  // pitch: to accommodate joint scaling or directional (CW/CCW) setting
+  // alpha_, alpha_c_, a_, a_c_, d_, d_c_, theta_, theta_c_ are inherited from
+  // serialArm (protected). Declaring them here would shadow the base-class
+  // members and create two separate copies, causing SetGeometry (which writes
+  // to serialArm's copies) to leave the SerialArmCalib copies uninitialised.
+
+  // pitch: joint scaling / direction — not present in serialArm
   Eigen::VectorXd pitch_;
 
   //! optimization algorithm object

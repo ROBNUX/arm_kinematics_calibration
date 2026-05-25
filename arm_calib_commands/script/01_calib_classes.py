@@ -22,8 +22,14 @@ import arm_calib_commands as c
 
 # ---------------------------------------------------------------------------
 # Craig DH parameter layout for serialArm-based classes:
-#   kine_para = [alpha[0..n-1], a[0..n-1], theta[0..n-1], d[0..n-1]]
+#   kine_para = [alpha[0..n-1], a[0..n-1], theta[0..n-1], d[0..n-1],
+#                tx, ty, tz, qw, qx, qy, qz]   ← 4*DoF + 7 elements total
+# The trailing 7 elements are the identity base offset; the constructor uses
+# them only to infer DoF = (size - 7) / 4.
 # ---------------------------------------------------------------------------
+
+_BASE = [0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0]   # identity frame [tx,ty,tz,qw,qx,qy,qz]
+
 
 def scara_kine_para() -> np.ndarray:
     """4-DOF SCARA: two 300 mm links, 300 mm vertical travel."""
@@ -31,7 +37,7 @@ def scara_kine_para() -> np.ndarray:
     a     = [0.30,       0.30, 0.0,     0.0]
     theta = [0.0,        0.0,  0.0,     0.0]
     d     = [0.30,       0.0,  0.20,    0.05]
-    return np.array(alpha + a + theta + d, dtype=np.float64)
+    return np.array(alpha + a + theta + d + _BASE, dtype=np.float64)
 
 
 def sixaxis_kine_para() -> np.ndarray:
@@ -40,12 +46,12 @@ def sixaxis_kine_para() -> np.ndarray:
     a     = [0.0,  0.075,      0.365, 0.09,       0.0,        0.0]
     theta = [0.0,  0.0,        0.0,   0.0,        0.0,        0.0]
     d     = [0.295, 0.0,       0.0,   0.340,      0.0,        0.095]
-    return np.array(alpha + a + theta + d, dtype=np.float64)
+    return np.array(alpha + a + theta + d + _BASE, dtype=np.float64)
 
 
 def singleaxis_kine_para() -> np.ndarray:
     """1-DOF prismatic axis."""
-    return np.array([0.0, 0.0, 0.0, 0.0], dtype=np.float64)
+    return np.array([0.0, 0.0, 0.0, 0.0] + _BASE, dtype=np.float64)
 
 
 def ujnt_kine_para() -> np.ndarray:
@@ -54,7 +60,7 @@ def ujnt_kine_para() -> np.ndarray:
     a     = [0.15,        0.0]
     theta = [0.0,         0.0]
     d     = [0.30,        0.0]
-    return np.array(alpha + a + theta + d, dtype=np.float64)
+    return np.array(alpha + a + theta + d + _BASE, dtype=np.float64)
 
 
 def xyz_kine_para() -> np.ndarray:
@@ -63,7 +69,7 @@ def xyz_kine_para() -> np.ndarray:
     a     = [0.0,  0.0,          0.0]
     theta = [0.0,  math.pi / 2, -math.pi / 2]
     d     = [0.0,  0.0,          0.0]
-    return np.array(alpha + a + theta + d, dtype=np.float64)
+    return np.array(alpha + a + theta + d + _BASE, dtype=np.float64)
 
 
 def main() -> int:
@@ -129,7 +135,7 @@ def main() -> int:
         ("UjntCalib",       c.UjntCalib(ujnt_kine_para()),        2),
         ("XyzGantryCalib",  c.XyzGantryCalib(xyz_kine_para()),    3),
     ]:
-        param_size = 4 * dof  # Craig DH: alpha, a, theta, d each with dof elements
+        param_size = 4 * dof + 7  # DH params (alpha,a,theta,d) + 7-element base offset
         ok, cal_dh = obj.GetCalibParamSet(param_size)
         print(f"  {cls_name}: GetCalibParamSet(size={param_size}) ok={ok}  "
               f"len={len(cal_dh)}")
@@ -143,8 +149,9 @@ def main() -> int:
     print("\n--- ResetCalibration ---")
     scara2 = c.ScaraCalib(scara_kine_para())
     scara2.ResetCalibration()
-    ok, params = scara2.GetCalibParamSet(4 * 4)
-    print(f"  ScaraCalib after ResetCalibration: GetCalibParamSet ok={ok}")
+    ok, cal_dh = scara2.GetCalibParamSet(4 * 4 + 7)
+    print(f"  ScaraCalib after ResetCalibration: GetCalibParamSet ok={ok}  "
+          f"len={len(cal_dh)}")
 
     return 0
 

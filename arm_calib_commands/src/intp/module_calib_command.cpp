@@ -121,6 +121,12 @@ py::tuple py_GetCalibParamSet_T(Derived& self, Eigen::Index param_size) {
   return py::make_tuple(ok, cal_DH);
 }
 
+template <typename Derived>
+void py_ResetCalibration_T(Derived& self) {
+  SerialArmCalib& base = self;
+  base.ResetCalibration();
+}
+
 py::tuple py_CpsCartPose(BaseCalibration& self, const refPose& p,
                          const Eigen::VectorXd& canonicalBase) {
   refPose cp;
@@ -244,6 +250,7 @@ PYBIND11_MODULE(arm_calib_commands, m) {
       .def(py::init<const Eigen::VectorXd&>(), py::arg("kine_para"))
       .def("GetName", &ScaraCalib::GetName)
       .def("setOptParam", &py_setOptParam_T<ScaraCalib>, py::arg("opt_param"))
+      .def("ResetCalibration", &py_ResetCalibration_T<ScaraCalib>)
       .def("LoadCalibParamSet", &py_LoadCalibParamSet_T<ScaraCalib>,
            py::arg("cal_DH"))
       .def("GetCalibParamSet", &py_GetCalibParamSet_T<ScaraCalib>,
@@ -254,6 +261,7 @@ PYBIND11_MODULE(arm_calib_commands, m) {
       .def(py::init<const Eigen::VectorXd&>(), py::arg("kine_para"))
       .def("GetName", &SixAxisCalib::GetName)
       .def("setOptParam", &py_setOptParam_T<SixAxisCalib>, py::arg("opt_param"))
+      .def("ResetCalibration", &py_ResetCalibration_T<SixAxisCalib>)
       .def("LoadCalibParamSet", &py_LoadCalibParamSet_T<SixAxisCalib>,
            py::arg("cal_DH"))
       .def("GetCalibParamSet", &py_GetCalibParamSet_T<SixAxisCalib>,
@@ -265,6 +273,7 @@ PYBIND11_MODULE(arm_calib_commands, m) {
       .def("GetName", &SingleAxisCalib::GetName)
       .def("setOptParam", &py_setOptParam_T<SingleAxisCalib>,
            py::arg("opt_param"))
+      .def("ResetCalibration", &py_ResetCalibration_T<SingleAxisCalib>)
       .def("LoadCalibParamSet", &py_LoadCalibParamSet_T<SingleAxisCalib>,
            py::arg("cal_DH"))
       .def("GetCalibParamSet", &py_GetCalibParamSet_T<SingleAxisCalib>,
@@ -275,6 +284,7 @@ PYBIND11_MODULE(arm_calib_commands, m) {
       .def(py::init<const Eigen::VectorXd&>(), py::arg("kine_para"))
       .def("GetName", &UjntCalib::GetName)
       .def("setOptParam", &py_setOptParam_T<UjntCalib>, py::arg("opt_param"))
+      .def("ResetCalibration", &py_ResetCalibration_T<UjntCalib>)
       .def("LoadCalibParamSet", &py_LoadCalibParamSet_T<UjntCalib>,
            py::arg("cal_DH"))
       .def("GetCalibParamSet", &py_GetCalibParamSet_T<UjntCalib>,
@@ -286,6 +296,7 @@ PYBIND11_MODULE(arm_calib_commands, m) {
       .def("GetName", &XyzGantryCalib::GetName)
       .def("setOptParam", &py_setOptParam_T<XyzGantryCalib>,
            py::arg("opt_param"))
+      .def("ResetCalibration", &py_ResetCalibration_T<XyzGantryCalib>)
       .def("LoadCalibParamSet", &py_LoadCalibParamSet_T<XyzGantryCalib>,
            py::arg("cal_DH"))
       .def("GetCalibParamSet", &py_GetCalibParamSet_T<XyzGantryCalib>,

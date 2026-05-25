@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 ''' python script to auto-generate test-cases to test the "traj.fit_traj_segment" function.
     this file rejects all the feasible cases that can fit into one segment, 
     and it generates the cases that should raise an error inside the function!
