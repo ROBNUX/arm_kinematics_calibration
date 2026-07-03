@@ -127,6 +127,134 @@ void py_ResetCalibration_T(Derived& self) {
   base.ResetCalibration();
 }
 
+template <typename Derived>
+double py_LaserDistanceCalib_T(Derived& self, const Eigen::VectorXd& base_offset,
+                               const Eigen::VectorXd& tool_offset,
+                               const EigenDRef<Eigen::Matrix3d>& laser2CartMap,
+                               const EigenDRef<Eigen::MatrixXd>& cart_measure,
+                               const EigenDRef<Eigen::MatrixXd>& qa_array,
+                               const EigenDRef<Eigen::MatrixXd>& laser_measure) {
+  BaseCalibration& base = self;
+  return base.LaserDistanceCalib(base_offset, tool_offset, laser2CartMap,
+                                 cart_measure, qa_array, laser_measure);
+}
+
+template <typename Derived>
+Eigen::VectorXd py_VerifyLaserDistanceCalib_T(
+    Derived& self, const Eigen::VectorXd& base_offset,
+    const Eigen::VectorXd& tool_offset,
+    const EigenDRef<Eigen::Matrix3d>& laser2CartMat,
+    const EigenDRef<Eigen::MatrixXd>& cart_measure,
+    const EigenDRef<Eigen::MatrixXd>& qa_array,
+    const EigenDRef<Eigen::MatrixXd>& laser_measure) {
+  BaseCalibration& base = self;
+  return base.VerifyLaserDistanceCalib(base_offset, tool_offset,
+                                       laser2CartMat, cart_measure, qa_array,
+                                       laser_measure);
+}
+
+template <typename Derived>
+double py_DirectMesCalib_T(Derived& self, const Eigen::VectorXd& base_offset,
+                           const Eigen::VectorXd& tool_offset,
+                           const EigenDRef<Eigen::MatrixXd>& cart_measure,
+                           const EigenDRef<Eigen::MatrixXd>& measureMents,
+                           const EigenDRef<Eigen::MatrixXd>& qa_array) {
+  BaseCalibration& base = self;
+  return base.DirectMesCalib(base_offset, tool_offset, cart_measure,
+                             measureMents, qa_array);
+}
+
+template <typename Derived>
+Eigen::VectorXd py_VerifyDirectMesCalib_T(
+    Derived& self, const Eigen::VectorXd& base_offset,
+    const Eigen::VectorXd& tool_offset,
+    const EigenDRef<Eigen::MatrixXd>& cart_measure,
+    const EigenDRef<Eigen::MatrixXd>& measureMents,
+    const EigenDRef<Eigen::MatrixXd>& qa_array) {
+  BaseCalibration& base = self;
+  return base.VerifyDirectMesCalib(base_offset, tool_offset, cart_measure,
+                                   measureMents, qa_array);
+}
+
+template <typename Derived>
+py::tuple py_CalibTCPDistMethod_T(Derived& self,
+                                  const Eigen::VectorXd& base_offset,
+                                  const EigenDRef<Eigen::MatrixXd>& qa_array,
+                                  const EigenDRef<Eigen::VectorXd>& measureMents,
+                                  const EigenDRef<Eigen::Vector3d>& mes_normal,
+                                  Eigen::Index tool_offset_size) {
+  BaseCalibration& base = self;
+  Eigen::VectorXd tool_offset = Eigen::VectorXd::Zero(tool_offset_size);
+  EigenDRef<Eigen::VectorXd> tool_offset_ref(tool_offset);
+  int ret = base.CalibTCPDistMethod(base_offset, qa_array, measureMents,
+                                    mes_normal, tool_offset_ref);
+  return py::make_tuple(ret, tool_offset);
+}
+
+template <typename Derived>
+py::tuple py_CalibBaseFrame_T(Derived& self,
+                              const EigenDRef<Eigen::MatrixXd>& jnt_measures,
+                              const Eigen::VectorXd& mes_tool,
+                              Eigen::Index base_size) {
+  BaseCalibration& base = self;
+  Eigen::VectorXd orig_base = Eigen::VectorXd::Zero(base_size);
+  Eigen::VectorXd comp_base = Eigen::VectorXd::Zero(base_size);
+  EigenDRef<Eigen::VectorXd> orig_ref(orig_base);
+  EigenDRef<Eigen::VectorXd> comp_ref(comp_base);
+  int ret = base.CalibBaseFrame(jnt_measures, mes_tool, orig_ref, comp_ref);
+  return py::make_tuple(ret, orig_base, comp_base);
+}
+
+template <typename Derived>
+py::tuple py_CpsCartPose_T(Derived& self, const refPose& p,
+                           const Eigen::VectorXd& canonicalBase) {
+  BaseCalibration& base = self;
+  refPose cp;
+  int ret = base.CpsCartPose(p, canonicalBase, cp);
+  return py::make_tuple(ret, cp);
+}
+
+template <typename Derived>
+py::tuple py_CpsJnt_T(Derived& self, const refPose& p, Eigen::Index dof) {
+  BaseCalibration& base = self;
+  Eigen::VectorXd cq = Eigen::VectorXd::Zero(dof);
+  int ret = base.CpsJnt(p, cq);
+  return py::make_tuple(ret, cq);
+}
+
+template <typename Derived>
+py::tuple py_CpsRobPath_T(Derived& self, const Eigen::VectorXd& calibBase,
+                          const Eigen::VectorXd& origBase,
+                          const Eigen::VectorXd& tool,
+                          const EigenDRef<Eigen::MatrixXd>& d_traj,
+                          Eigen::Index md_traj_rows, Eigen::Index d_j_traj_rows,
+                          Eigen::Index md_j_traj_rows, Eigen::Index a_traj_rows) {
+  BaseCalibration& base = self;
+  const Eigen::Index cols = d_traj.cols();
+  Eigen::MatrixXd md_traj = Eigen::MatrixXd::Zero(md_traj_rows, cols);
+  Eigen::MatrixXd d_j_traj = Eigen::MatrixXd::Zero(d_j_traj_rows, cols);
+  Eigen::MatrixXd md_j_traj = Eigen::MatrixXd::Zero(md_j_traj_rows, cols);
+  Eigen::MatrixXd a_traj = Eigen::MatrixXd::Zero(a_traj_rows, cols);
+  EigenDRef<Eigen::MatrixXd> md_ref(md_traj);
+  EigenDRef<Eigen::MatrixXd> dj_ref(d_j_traj);
+  EigenDRef<Eigen::MatrixXd> mdj_ref(md_j_traj);
+  EigenDRef<Eigen::MatrixXd> a_ref(a_traj);
+  int ret = base.CpsRobPath(calibBase, origBase, tool, d_traj, md_ref, dj_ref,
+                            mdj_ref, a_ref);
+  return py::make_tuple(ret, md_traj, d_j_traj, md_j_traj, a_traj);
+}
+
+template <typename Derived>
+py::tuple py_PickSubJacobianForPara_T(Derived& self, const Eigen::MatrixXd& Jt_p,
+                                      const Eigen::MatrixXd& Jp_r,
+                                      bool reduction) {
+  BaseCalibration& base = self;
+  Eigen::MatrixXd Js_t1;
+  Eigen::MatrixXd Js_r1;
+  bool ok = base.PickSubJacobianForPara(Jt_p, Jp_r, Js_t1, Js_r1, reduction);
+  return py::make_tuple(ok, Js_t1, Js_r1);
+}
+
 py::tuple py_CpsCartPose(BaseCalibration& self, const refPose& p,
                          const Eigen::VectorXd& canonicalBase) {
   refPose cp;
@@ -198,11 +326,11 @@ PYBIND11_MODULE(arm_calib_commands, m) {
            py::arg("qa_array"))
       .def("CalibTCPDistMethod", &py_CalibTCPDistMethod, py::arg("base_offset"),
            py::arg("qa_array"), py::arg("measureMents"), py::arg("mes_normal"),
-           py::arg("tool_offset_size") = 6,
+           py::arg("tool_offset_size") = 7,
            "TCP calibration using a single mechanical distance sensor. "
            "Returns (status, tool_offset).")
       .def("CalibBaseFrame", &py_CalibBaseFrame, py::arg("jnt_measures"),
-           py::arg("mes_tool"), py::arg("base_size") = 6,
+           py::arg("mes_tool"), py::arg("base_size") = 7,
            "8-point base-frame calibration. Returns "
            "(status, orig_base, comp_base).")
       .def("CpsCartPose", &py_CpsCartPose, py::arg("p"),
@@ -254,7 +382,40 @@ PYBIND11_MODULE(arm_calib_commands, m) {
       .def("LoadCalibParamSet", &py_LoadCalibParamSet_T<ScaraCalib>,
            py::arg("cal_DH"))
       .def("GetCalibParamSet", &py_GetCalibParamSet_T<ScaraCalib>,
-           py::arg("param_size"));
+           py::arg("param_size"))
+      .def("LaserDistanceCalib", &py_LaserDistanceCalib_T<ScaraCalib>,
+           py::arg("base_offset"), py::arg("tool_offset"),
+           py::arg("laser2CartMap"), py::arg("cart_measure"),
+           py::arg("qa_array"), py::arg("laser_measure"))
+      .def("VerifyLaserDistanceCalib",
+           &py_VerifyLaserDistanceCalib_T<ScaraCalib>, py::arg("base_offset"),
+           py::arg("tool_offset"), py::arg("laser2CartMat"),
+           py::arg("cart_measure"), py::arg("qa_array"),
+           py::arg("laser_measure"))
+      .def("DirectMesCalib", &py_DirectMesCalib_T<ScaraCalib>,
+           py::arg("base_offset"), py::arg("tool_offset"),
+           py::arg("cart_measure"), py::arg("measureMents"),
+           py::arg("qa_array"))
+      .def("VerifyDirectMesCalib", &py_VerifyDirectMesCalib_T<ScaraCalib>,
+           py::arg("base_offset"), py::arg("tool_offset"),
+           py::arg("cart_measure"), py::arg("measureMents"),
+           py::arg("qa_array"))
+      .def("CalibTCPDistMethod", &py_CalibTCPDistMethod_T<ScaraCalib>,
+           py::arg("base_offset"), py::arg("qa_array"),
+           py::arg("measureMents"), py::arg("mes_normal"),
+           py::arg("tool_offset_size") = 7)
+      .def("CalibBaseFrame", &py_CalibBaseFrame_T<ScaraCalib>,
+           py::arg("jnt_measures"), py::arg("mes_tool"),
+           py::arg("base_size") = 7)
+      .def("CpsCartPose", &py_CpsCartPose_T<ScaraCalib>, py::arg("p"),
+           py::arg("canonicalBase"))
+      .def("CpsJnt", &py_CpsJnt_T<ScaraCalib>, py::arg("p"), py::arg("dof"))
+      .def("CpsRobPath", &py_CpsRobPath_T<ScaraCalib>, py::arg("calibBase"),
+           py::arg("origBase"), py::arg("tool"), py::arg("d_traj"),
+           py::arg("md_traj_rows"), py::arg("d_j_traj_rows"),
+           py::arg("md_j_traj_rows"), py::arg("a_traj_rows"))
+      .def("PickSubJacobianForPara", &py_PickSubJacobianForPara_T<ScaraCalib>,
+           py::arg("Jt_p"), py::arg("Jp_r"), py::arg("reduction") = false);
 
   py::class_<SixAxisCalib, SerialArmCalib>(m, "SixAxisCalib")
       .def(py::init<>())
@@ -265,7 +426,40 @@ PYBIND11_MODULE(arm_calib_commands, m) {
       .def("LoadCalibParamSet", &py_LoadCalibParamSet_T<SixAxisCalib>,
            py::arg("cal_DH"))
       .def("GetCalibParamSet", &py_GetCalibParamSet_T<SixAxisCalib>,
-           py::arg("param_size"));
+           py::arg("param_size"))
+      .def("LaserDistanceCalib", &py_LaserDistanceCalib_T<SixAxisCalib>,
+           py::arg("base_offset"), py::arg("tool_offset"),
+           py::arg("laser2CartMap"), py::arg("cart_measure"),
+           py::arg("qa_array"), py::arg("laser_measure"))
+      .def("VerifyLaserDistanceCalib",
+           &py_VerifyLaserDistanceCalib_T<SixAxisCalib>, py::arg("base_offset"),
+           py::arg("tool_offset"), py::arg("laser2CartMat"),
+           py::arg("cart_measure"), py::arg("qa_array"),
+           py::arg("laser_measure"))
+      .def("DirectMesCalib", &py_DirectMesCalib_T<SixAxisCalib>,
+           py::arg("base_offset"), py::arg("tool_offset"),
+           py::arg("cart_measure"), py::arg("measureMents"),
+           py::arg("qa_array"))
+      .def("VerifyDirectMesCalib", &py_VerifyDirectMesCalib_T<SixAxisCalib>,
+           py::arg("base_offset"), py::arg("tool_offset"),
+           py::arg("cart_measure"), py::arg("measureMents"),
+           py::arg("qa_array"))
+      .def("CalibTCPDistMethod", &py_CalibTCPDistMethod_T<SixAxisCalib>,
+           py::arg("base_offset"), py::arg("qa_array"),
+           py::arg("measureMents"), py::arg("mes_normal"),
+           py::arg("tool_offset_size") = 7)
+      .def("CalibBaseFrame", &py_CalibBaseFrame_T<SixAxisCalib>,
+           py::arg("jnt_measures"), py::arg("mes_tool"),
+           py::arg("base_size") = 7)
+      .def("CpsCartPose", &py_CpsCartPose_T<SixAxisCalib>, py::arg("p"),
+           py::arg("canonicalBase"))
+      .def("CpsJnt", &py_CpsJnt_T<SixAxisCalib>, py::arg("p"), py::arg("dof"))
+      .def("CpsRobPath", &py_CpsRobPath_T<SixAxisCalib>, py::arg("calibBase"),
+           py::arg("origBase"), py::arg("tool"), py::arg("d_traj"),
+           py::arg("md_traj_rows"), py::arg("d_j_traj_rows"),
+           py::arg("md_j_traj_rows"), py::arg("a_traj_rows"))
+      .def("PickSubJacobianForPara", &py_PickSubJacobianForPara_T<SixAxisCalib>,
+           py::arg("Jt_p"), py::arg("Jp_r"), py::arg("reduction") = false);
 
   py::class_<SingleAxisCalib, SerialArmCalib>(m, "SingleAxisCalib")
       .def(py::init<>())
@@ -277,7 +471,42 @@ PYBIND11_MODULE(arm_calib_commands, m) {
       .def("LoadCalibParamSet", &py_LoadCalibParamSet_T<SingleAxisCalib>,
            py::arg("cal_DH"))
       .def("GetCalibParamSet", &py_GetCalibParamSet_T<SingleAxisCalib>,
-           py::arg("param_size"));
+           py::arg("param_size"))
+      .def("LaserDistanceCalib", &py_LaserDistanceCalib_T<SingleAxisCalib>,
+           py::arg("base_offset"), py::arg("tool_offset"),
+           py::arg("laser2CartMap"), py::arg("cart_measure"),
+           py::arg("qa_array"), py::arg("laser_measure"))
+      .def("VerifyLaserDistanceCalib",
+           &py_VerifyLaserDistanceCalib_T<SingleAxisCalib>,
+           py::arg("base_offset"), py::arg("tool_offset"),
+           py::arg("laser2CartMat"), py::arg("cart_measure"),
+           py::arg("qa_array"), py::arg("laser_measure"))
+      .def("DirectMesCalib", &py_DirectMesCalib_T<SingleAxisCalib>,
+           py::arg("base_offset"), py::arg("tool_offset"),
+           py::arg("cart_measure"), py::arg("measureMents"),
+           py::arg("qa_array"))
+      .def("VerifyDirectMesCalib", &py_VerifyDirectMesCalib_T<SingleAxisCalib>,
+           py::arg("base_offset"), py::arg("tool_offset"),
+           py::arg("cart_measure"), py::arg("measureMents"),
+           py::arg("qa_array"))
+      .def("CalibTCPDistMethod", &py_CalibTCPDistMethod_T<SingleAxisCalib>,
+           py::arg("base_offset"), py::arg("qa_array"),
+           py::arg("measureMents"), py::arg("mes_normal"),
+           py::arg("tool_offset_size") = 7)
+      .def("CalibBaseFrame", &py_CalibBaseFrame_T<SingleAxisCalib>,
+           py::arg("jnt_measures"), py::arg("mes_tool"),
+           py::arg("base_size") = 7)
+      .def("CpsCartPose", &py_CpsCartPose_T<SingleAxisCalib>, py::arg("p"),
+           py::arg("canonicalBase"))
+      .def("CpsJnt", &py_CpsJnt_T<SingleAxisCalib>, py::arg("p"), py::arg("dof"))
+      .def("CpsRobPath", &py_CpsRobPath_T<SingleAxisCalib>,
+           py::arg("calibBase"), py::arg("origBase"), py::arg("tool"),
+           py::arg("d_traj"), py::arg("md_traj_rows"),
+           py::arg("d_j_traj_rows"), py::arg("md_j_traj_rows"),
+           py::arg("a_traj_rows"))
+      .def("PickSubJacobianForPara",
+           &py_PickSubJacobianForPara_T<SingleAxisCalib>, py::arg("Jt_p"),
+           py::arg("Jp_r"), py::arg("reduction") = false);
 
   py::class_<UjntCalib, SerialArmCalib>(m, "UjntCalib")
       .def(py::init<>())
@@ -288,7 +517,40 @@ PYBIND11_MODULE(arm_calib_commands, m) {
       .def("LoadCalibParamSet", &py_LoadCalibParamSet_T<UjntCalib>,
            py::arg("cal_DH"))
       .def("GetCalibParamSet", &py_GetCalibParamSet_T<UjntCalib>,
-           py::arg("param_size"));
+           py::arg("param_size"))
+      .def("LaserDistanceCalib", &py_LaserDistanceCalib_T<UjntCalib>,
+           py::arg("base_offset"), py::arg("tool_offset"),
+           py::arg("laser2CartMap"), py::arg("cart_measure"),
+           py::arg("qa_array"), py::arg("laser_measure"))
+      .def("VerifyLaserDistanceCalib",
+           &py_VerifyLaserDistanceCalib_T<UjntCalib>, py::arg("base_offset"),
+           py::arg("tool_offset"), py::arg("laser2CartMat"),
+           py::arg("cart_measure"), py::arg("qa_array"),
+           py::arg("laser_measure"))
+      .def("DirectMesCalib", &py_DirectMesCalib_T<UjntCalib>,
+           py::arg("base_offset"), py::arg("tool_offset"),
+           py::arg("cart_measure"), py::arg("measureMents"),
+           py::arg("qa_array"))
+      .def("VerifyDirectMesCalib", &py_VerifyDirectMesCalib_T<UjntCalib>,
+           py::arg("base_offset"), py::arg("tool_offset"),
+           py::arg("cart_measure"), py::arg("measureMents"),
+           py::arg("qa_array"))
+      .def("CalibTCPDistMethod", &py_CalibTCPDistMethod_T<UjntCalib>,
+           py::arg("base_offset"), py::arg("qa_array"),
+           py::arg("measureMents"), py::arg("mes_normal"),
+           py::arg("tool_offset_size") = 7)
+      .def("CalibBaseFrame", &py_CalibBaseFrame_T<UjntCalib>,
+           py::arg("jnt_measures"), py::arg("mes_tool"),
+           py::arg("base_size") = 7)
+      .def("CpsCartPose", &py_CpsCartPose_T<UjntCalib>, py::arg("p"),
+           py::arg("canonicalBase"))
+      .def("CpsJnt", &py_CpsJnt_T<UjntCalib>, py::arg("p"), py::arg("dof"))
+      .def("CpsRobPath", &py_CpsRobPath_T<UjntCalib>, py::arg("calibBase"),
+           py::arg("origBase"), py::arg("tool"), py::arg("d_traj"),
+           py::arg("md_traj_rows"), py::arg("d_j_traj_rows"),
+           py::arg("md_j_traj_rows"), py::arg("a_traj_rows"))
+      .def("PickSubJacobianForPara", &py_PickSubJacobianForPara_T<UjntCalib>,
+           py::arg("Jt_p"), py::arg("Jp_r"), py::arg("reduction") = false);
 
   py::class_<XyzGantryCalib, SerialArmCalib>(m, "XyzGantryCalib")
       .def(py::init<>())
@@ -300,7 +562,42 @@ PYBIND11_MODULE(arm_calib_commands, m) {
       .def("LoadCalibParamSet", &py_LoadCalibParamSet_T<XyzGantryCalib>,
            py::arg("cal_DH"))
       .def("GetCalibParamSet", &py_GetCalibParamSet_T<XyzGantryCalib>,
-           py::arg("param_size"));
+           py::arg("param_size"))
+      .def("LaserDistanceCalib", &py_LaserDistanceCalib_T<XyzGantryCalib>,
+           py::arg("base_offset"), py::arg("tool_offset"),
+           py::arg("laser2CartMap"), py::arg("cart_measure"),
+           py::arg("qa_array"), py::arg("laser_measure"))
+      .def("VerifyLaserDistanceCalib",
+           &py_VerifyLaserDistanceCalib_T<XyzGantryCalib>,
+           py::arg("base_offset"), py::arg("tool_offset"),
+           py::arg("laser2CartMat"), py::arg("cart_measure"),
+           py::arg("qa_array"), py::arg("laser_measure"))
+      .def("DirectMesCalib", &py_DirectMesCalib_T<XyzGantryCalib>,
+           py::arg("base_offset"), py::arg("tool_offset"),
+           py::arg("cart_measure"), py::arg("measureMents"),
+           py::arg("qa_array"))
+      .def("VerifyDirectMesCalib", &py_VerifyDirectMesCalib_T<XyzGantryCalib>,
+           py::arg("base_offset"), py::arg("tool_offset"),
+           py::arg("cart_measure"), py::arg("measureMents"),
+           py::arg("qa_array"))
+      .def("CalibTCPDistMethod", &py_CalibTCPDistMethod_T<XyzGantryCalib>,
+           py::arg("base_offset"), py::arg("qa_array"),
+           py::arg("measureMents"), py::arg("mes_normal"),
+           py::arg("tool_offset_size") = 7)
+      .def("CalibBaseFrame", &py_CalibBaseFrame_T<XyzGantryCalib>,
+           py::arg("jnt_measures"), py::arg("mes_tool"),
+           py::arg("base_size") = 7)
+      .def("CpsCartPose", &py_CpsCartPose_T<XyzGantryCalib>, py::arg("p"),
+           py::arg("canonicalBase"))
+      .def("CpsJnt", &py_CpsJnt_T<XyzGantryCalib>, py::arg("p"), py::arg("dof"))
+      .def("CpsRobPath", &py_CpsRobPath_T<XyzGantryCalib>,
+           py::arg("calibBase"), py::arg("origBase"), py::arg("tool"),
+           py::arg("d_traj"), py::arg("md_traj_rows"),
+           py::arg("d_j_traj_rows"), py::arg("md_j_traj_rows"),
+           py::arg("a_traj_rows"))
+      .def("PickSubJacobianForPara",
+           &py_PickSubJacobianForPara_T<XyzGantryCalib>, py::arg("Jt_p"),
+           py::arg("Jp_r"), py::arg("reduction") = false);
 
   py::class_<XyzUrCalib, BaseCalibration>(m, "XyzUrCalib")
       .def(py::init<>())

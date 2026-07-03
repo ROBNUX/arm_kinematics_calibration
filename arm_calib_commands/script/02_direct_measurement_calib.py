@@ -145,7 +145,7 @@ def main() -> int:
     # Read back the calibrated DH parameters
     # ----------------------------------------------------------------
     print("\n--- Calibrated DH parameter set ---")
-    param_size = 4 * DOF
+    param_size = 4 * DOF + 7
     ok, cal_dh = scara.GetCalibParamSet(param_size)
     if ok:
         print(f"  alpha (calibrated): {cal_dh[:DOF].round(6)}")

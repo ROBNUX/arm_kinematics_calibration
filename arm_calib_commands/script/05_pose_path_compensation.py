@@ -28,11 +28,12 @@ trajectory and returns the corrected trajectory plus auxiliary outputs.
         calibBase,      # 7-element calibrated base frame
         origBase,       # 7-element uncalibrated (canonical) base frame
         tool,           # 7-element tool frame
-        d_traj,         # 7 × N desired Cartesian path  [tx,ty,tz,qw,qx,qy,qz]
-        md_traj_rows,   # rows for compensated Cartesian output (7)
+        d_traj,         # 9 x N desired Cartesian path
+                        # [tx,ty,tz,qw,qx,qy,qz,branchFlag,turnFlag]
+        md_traj_rows,   # rows for compensated Cartesian output (9, matches d_traj)
         d_j_traj_rows,  # rows for nominal joint trajectory (DOF)
         md_j_traj_rows, # rows for compensated joint trajectory (DOF)
-        a_traj_rows,    # rows for actual Cartesian trajectory (7)
+        a_traj_rows,    # rows for actual Cartesian trajectory (9, matches d_traj)
     )
 
 Run from a sourced workspace:
@@ -128,23 +129,26 @@ def main() -> int:
     print("\n--- CpsRobPath ---")
     N_TRAJ = 15   # number of trajectory waypoints
 
-    # Desired Cartesian path: [tx, ty, tz, qw, qx, qy, qz] per column
+    # Desired Cartesian path per column:
+    # [tx, ty, tz, qw, qx, qy, qz, branchFlag, turnFlag]
     t_vals = np.linspace(0, 1, N_TRAJ)
-    d_traj = np.zeros((7, N_TRAJ), dtype=np.float64)
+    d_traj = np.zeros((9, N_TRAJ), dtype=np.float64)
     d_traj[0] = 0.4 * np.cos(2 * math.pi * t_vals)      # x
     d_traj[1] = 0.4 * np.sin(2 * math.pi * t_vals)      # y
     d_traj[2] = -0.55                                     # z = constant
     d_traj[3] = 1.0                                       # qw = 1 (identity rotation)
+    # d_traj[7] (branch flag) and d_traj[8] (turn flag) left at 0
 
     ret, md_traj, d_j_traj, md_j_traj, a_traj = scara.CpsRobPath(
         IDENTITY_FRAME,   # calibBase
         IDENTITY_FRAME,   # origBase
         IDENTITY_FRAME,   # tool
         d_traj,
-        md_traj_rows=7,   # compensated Cartesian: same 7 rows
+        md_traj_rows=9,   # compensated Cartesian: matches d_traj's 9 rows
+                          # (pose[7] + branchFlag + turnFlag, via ToEigenVecPose)
         d_j_traj_rows=DOF,
         md_j_traj_rows=DOF,
-        a_traj_rows=7,
+        a_traj_rows=9,
     )
     print(f"  CpsRobPath return code: {ret}")
     print(f"  d_traj    shape: {d_traj.shape}")

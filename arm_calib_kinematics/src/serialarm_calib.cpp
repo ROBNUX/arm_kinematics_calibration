@@ -227,7 +227,8 @@ double SerialArmCalib::LaserDistanceCalib(
   Rotation rb(qb);
 
   // initialize iter alg parameters
-  opt_alg_.setParam(CALIB_DECENT_STEPSIZE, sam_region_scale_);
+  opt_alg_.setParam(CALIB_DECENT_STEPSIZE, sam_region_scale_, 0.9, 0.999,
+                    opt_method_);
   resetCache_ = true;
 
   // in any case, we start with pre-calibrated model
@@ -301,7 +302,7 @@ double SerialArmCalib::LaserDistanceCalib(
       // next we compute translational Jacobian of robot tip w.r.t world frame
       Eigen::Matrix3d t_e_hat;
       t_e.ToHat(&t_e_hat);
-      Eigen::MatrixXd current_J(3, 5 * DoF_);
+      Eigen::MatrixXd current_J(3, 4 * DoF_);
       current_J = rb.ToEigenMat() * (Jp_t - t_e_hat * Jp_r);
 
       if (i == 0) {
@@ -314,7 +315,7 @@ double SerialArmCalib::LaserDistanceCalib(
         // laser rel. displacement  - robot reported displacement
         Eigen::Vector3d epsi = dls - dp;
         estimation_err += epsi.norm();
-        A.block((i - 1) * 3, 0, 3, 5 * DoF_) = current_J - first_J;
+        A.block((i - 1) * 3, 0, 3, 4 * DoF_) = current_J - first_J;
         b.block((i - 1) * 3, 0, 3, 1) = epsi;
       }
     }
@@ -624,7 +625,8 @@ double SerialArmCalib::DirectMesCalib(
   }
 
   // initialize iter alg parameters
-  opt_alg_.setParam(CALIB_DECENT_STEPSIZE, sam_region_scale_);
+  opt_alg_.setParam(CALIB_DECENT_STEPSIZE, sam_region_scale_, 0.9, 0.999,
+                    opt_method_);
   resetCache_ = true;
   // in any case, we start with uncalibrated model
   Eigen::VectorXd a_tmp = a_c_, alpha_tmp = alpha_c_,
@@ -644,8 +646,11 @@ double SerialArmCalib::DirectMesCalib(
   // we need to define one matrix A and one vector b for regression
   // number of columns 4 * DoF_, alpha_ [DoF_], a_ [DoF_],
   // theta_ [DoF_], d_ [DoF_]
-  Eigen::MatrixXd A((num_measures - 1) * measDoF, 4 * DoF_);
-  Eigen::VectorXd b((num_measures - 1) * measDoF);
+  // unlike LaserDistanceCalib (which fits relative displacements against a
+  // reference sample), DirectMesCalib fits absolute positions, so all
+  // num_measures samples (including index 0) contribute a regression row.
+  Eigen::MatrixXd A(num_measures * measDoF, 4 * DoF_);
+  Eigen::VectorXd b(num_measures * measDoF);
   double previous_err = std::numeric_limits<double>::max();
   double estimation_err = 0.5 * previous_err;
 
@@ -696,13 +701,13 @@ double SerialArmCalib::DirectMesCalib(
       Eigen::MatrixXd J = rb.ToEigenMat() * (Jp_t - t_e_hat * Jp_r);
       Eigen::Vector3d dp = measureMents.col(i) - tf.ToEigenVec();
       estimation_err += dp.norm();  // accu_error;
-      A.block((i - 1) * measDoF, 0, measDoF, 4 * DoF_) =
+      A.block(i * measDoF, 0, measDoF, 4 * DoF_) =
           J.block(0, 0, measDoF, 4 * DoF_);
-      b.block((i - 1) * measDoF, 0, measDoF, 1) = dp;
+      b.block(i * measDoF, 0, measDoF, 1) = dp;
     }
 
     // average estimation error for a single measurement
-    estimation_err /= double(num_measures - 1);
+    estimation_err /= double(num_measures);
 
     // using opt_alg_ to compute the best delta_para given the current para
     // used as an internal loop
@@ -800,11 +805,18 @@ double SerialArmCalib::DirectMesCalib(
     Eigen::Vector3d dp = measureMents.col(i) - tf.ToEigenVec();
     comp_err += dp.norm();
 
-    Eigen::VectorXd dcart = measureMents.col(i) - cart_measure.col(i);
+    // cart_measure's columns are [x,y,z,R,P,Y,S,T] (>= measDoF rows);
+    // measureMents only carries the first measDoF (translation) components,
+    // so compare against just that leading block, not the full column.
+    Eigen::VectorXd dcart =
+        measureMents.col(i) - cart_measure.block(0, i, measDoF, 1);
     orig_err += dcart.norm();
   }
-  double avg_orig_err = orig_err / (total_measures - num_measures - 1);
-  double avg_comp_err = comp_err / (total_measures - num_measures - 1);
+  // unlike LaserDistanceCalib's held-out loop, DirectMesCalib does not skip
+  // a reference sample, so all (total_measures - num_measures) held-out
+  // samples contribute a term above.
+  double avg_orig_err = orig_err / (total_measures - num_measures);
+  double avg_comp_err = comp_err / (total_measures - num_measures);
   double overall_comp_err =
       (previous_err * 2.0 + avg_comp_err) / 3.0;  // balanced overall comp err
   // average estimation error for a single measurement
@@ -907,27 +919,33 @@ Eigen::VectorXd SerialArmCalib::VerifyDirectMesCalib(
     Eigen::Vector3d dp = measureMents.col(i) - tf.ToEigenVec();
     comp_err += dp.norm();
 
-    Eigen::VectorXd dcart = measureMents.col(i) - cart_measure.col(i);
+    // cart_measure's columns are [x,y,z,R,P,Y,S,T] (>= measDoF rows);
+    // measureMents only carries the first measDoF (translation) components,
+    // so compare against just that leading block, not the full column.
+    Eigen::VectorXd dcart =
+        measureMents.col(i) - cart_measure.block(0, i, measDoF, 1);
     orig_err += dcart.norm();
   }
-  // average estimation error for a single measurement
+  // average estimation error for a single measurement. Unlike
+  // VerifyLaserDistanceCalib (which skips sample 0 as a differencing
+  // reference), this loop above sums a term for all total_measures samples,
+  // so the divisor is total_measures (not total_measures - 1).
   strs.str("");
   strs << GetName() << ":"
-       << "accumulation error before comp. = "
-       << orig_err / (total_measures - 1)
-       << ", after comp. the error = " << comp_err / (total_measures - 1)
+       << "accumulation error before comp. = " << orig_err / total_measures
+       << ", after comp. the error = " << comp_err / total_measures
        << std::endl;
   LOG_INFO(strs);
 
-  outData(0) = orig_err / (total_measures - 1);
+  outData(0) = orig_err / total_measures;
   if (comp_err >= orig_err) {
     strs.str("");
     strs << GetName() << ":"
          << "Calib verification result is not satisfied" << std::endl;
     LOG_ALARM(strs);
-    outData(1) = -comp_err / (total_measures - 1);
+    outData(1) = -comp_err / total_measures;
   } else {
-    outData(1) = comp_err / (total_measures - 1);
+    outData(1) = comp_err / total_measures;
   }
   return outData;
 }
@@ -958,6 +976,18 @@ int SerialArmCalib::CalibTCPDistMethod(
     strs << GetName() << ":"
          << "input data dimension is not matching or too few measures"
          << " so can not do  tool calibration, in function " << __FUNCTION__
+         << ", line " << __LINE__ << std::endl;
+    LOG_ERROR(strs);
+    return -ERR_ROB_CALIB_MEASURE_DATA_WRONG_DIM;
+  }
+  // final_tool_offset is always written as [tx,ty,tz,qw,qx,qy,qz] (7
+  // elements) below, regardless of the translational sub-block size.
+  if (final_tool_offset.size() != 7) {
+    strs.str("");
+    strs << GetName() << ":"
+         << "final_tool_offset output vector must have size 7"
+            " ([tx,ty,tz,qw,qx,qy,qz]), got "
+         << final_tool_offset.size() << ", in function " << __FUNCTION__
          << ", line " << __LINE__ << std::endl;
     LOG_ERROR(strs);
     return -ERR_ROB_CALIB_MEASURE_DATA_WRONG_DIM;
@@ -1026,7 +1056,10 @@ int SerialArmCalib::CalibTCPDistMethod(
     }
   }
   Eigen::MatrixXd BB = A;
-  if (GetName() == "scara") {  // scara
+  if (GetName() == "Scara calib") {  // scara's tool z-component isn't
+                                     // observable through this sensor model;
+                                     // ScaraCalib::GetName() (not the string
+                                     // "scara") is the actual class name.
     BB = A.block(0, 0, num_jnt_measures - 1, 2);
   }
   strs.str("");
@@ -1056,7 +1089,7 @@ int SerialArmCalib::CalibTCPDistMethod(
   // one of the axis of tcp frame, for scara, this axis is x-axis, for
   // 6axis, this axis is z-axis
   Quaternion q;
-  if (GetName() == "scara") {  // scara
+  if (GetName() == "Scara calib") {  // scara
     double yaw = atan2(outV(1), outV(0));
     q.SetEulerZYX(yaw, 0, 0);
   } else {  // 6 axis
@@ -1088,6 +1121,20 @@ int SerialArmCalib::CalibBaseFrame(
          << "The input vector has wrong dimension in function " << __FUNCTION__
          << ", at line " << __LINE__ << std::endl;
     LOG_ERROR(strs);
+    return -ERR_INPUT_PARA_WRONG_DIM;
+  }
+  // orig_base/comp_base are always written as [tx,ty,tz,qw,qx,qy,qz] (7
+  // elements) below via .resize(7), which asserts if the caller-provided
+  // Eigen::Ref buffer isn't already that size.
+  if (orig_base.size() != 7 || comp_base.size() != 7) {
+    strs.str("");
+    strs << GetName() << ":"
+         << "orig_base/comp_base output vectors must have size 7"
+            " ([tx,ty,tz,qw,qx,qy,qz]), got "
+         << orig_base.size() << "/" << comp_base.size() << ", in function "
+         << __FUNCTION__ << ", line " << __LINE__ << std::endl;
+    LOG_ERROR(strs);
+    return -ERR_ROB_CALIB_MEASURE_DATA_WRONG_DIM;
   }
 
   Frame userBase;  // default to be identity transform
@@ -1561,6 +1608,17 @@ int SerialArmCalib::CpsRobPath(
 
   size_t numPts = d_traj.cols();
   size_t numRows = d_traj.rows();
+  // each column is read below as [tx,ty,tz,qw,qx,qy,qz,branchFlag,turnFlag]
+  if (numRows < 9) {
+    strs.str("");
+    strs << GetName() << ":"
+         << "d_traj must have >= 9 rows "
+            "([tx,ty,tz,qw,qx,qy,qz,branchFlag,turnFlag]), got " << numRows
+         << " so can not do path compensation, in function " << __FUNCTION__
+         << ", line " << __LINE__ << std::endl;
+    LOG_ERROR(strs);
+    return -ERR_INPUT_PARA_WRONG_DIM;
+  }
   // resize output variables
   md_traj.resize(numRows, numPts);
   d_j_traj.resize(DoF_, numPts);

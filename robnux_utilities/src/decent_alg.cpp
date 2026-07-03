@@ -217,6 +217,11 @@ bool DecentAlg::OptGradientVec(const Eigen::MatrixXd& A1,
       // call RemoveColumn
       RemoveColumn(A2, d_indices_[i]);
     }
+    // ind_indices_ is cached from the first call's ReduceJacobian and stays
+    // valid (column reduction is only computed once); numParam1 must be
+    // re-derived from it here too, otherwise it's left uninitialized on
+    // every call after the first, and the size check below fails randomly.
+    numParam1 = ind_indices_.size();
   }
 
   if (numParam1 != A2.cols()) {

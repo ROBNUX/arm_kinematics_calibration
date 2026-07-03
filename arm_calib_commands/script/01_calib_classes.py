@@ -99,7 +99,7 @@ def main() -> int:
         ("SingleAxisCalib(para)", c.SingleAxisCalib(singleaxis_kine_para())),
         ("UjntCalib(para)",       c.UjntCalib(ujnt_kine_para())),
         ("XyzGantryCalib(para)",  c.XyzGantryCalib(xyz_kine_para())),
-        ("XyzUrCalib(UR,XYZ)",    c.XyzUrCalib(sixaxis_kine_para(), xyz_kine_para())),
+        ("XyzUrCalib(UR,XYZ)",    c.XyzUrCalib(ujnt_kine_para(), xyz_kine_para())),
     ]
     for cls_name, obj in classes_with_para:
         print(f"  {cls_name} -> GetName: '{obj.GetName()}'")

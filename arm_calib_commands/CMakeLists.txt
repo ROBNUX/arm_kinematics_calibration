@@ -43,9 +43,16 @@ install(PROGRAMS
   script/04_laser_distance_calib.py
   script/05_pose_path_compensation.py
   script/06_jacobian_picking.py
+  script/07_ground_truth_scara_deep_dive.py
+  script/test_calib_all_types.py
   script/traj_plot.py
   script/traj_segment_example.py
   script/generate_exception_test_cases.py
+  DESTINATION lib/${PROJECT_NAME}
+)
+
+install(PROGRAMS
+  script/calib_registry.py
   DESTINATION lib/${PROJECT_NAME}
 )
 

@@ -14,6 +14,13 @@ class KINEMATICS_API XyzUrCalib : public XYZ_UR,
   XyzUrCalib(const Eigen::VectorXd& dh_UR,
              const Eigen::VectorXd& dh_XYZ);
 
+  // Configures both the inherited XYZ_UR's own XYZ/UR sub-objects (so
+  // JntToCart/CartToJnt/CalcJacobian inherited from XYZ_UR keep working) and
+  // the calibration-capable xyz_calib/ur_calib sub-objects that
+  // LaserDistanceCalib/DirectMesCalib/etc. delegate to -- XYZ_UR::SetGeometry
+  // alone only configures the former.
+  void SetGeometry(const Eigen::VectorXd& kine_para) override;
+
   double LaserDistanceCalib(
       const Eigen::VectorXd& base_offset, const Eigen::VectorXd& tool_offset,
       const EigenDRef<Eigen::Matrix3d>& laser2CartMap,

@@ -13,7 +13,7 @@ are recorded.
         qa_array,         # DOF × N joint-angle matrix
         measureMents,     # N-element vector of distance readings (m)
         mes_normal,       # 3-element plane normal unit vector
-        tool_offset_size, # output size (default 6: tx,ty,tz,yaw,pitch,roll)
+        tool_offset_size, # output size (default/required 7: tx,ty,tz,qw,qx,qy,qz)
     )
 
 CalibBaseFrame
@@ -25,7 +25,7 @@ a fixed feature on a workpiece.
     (ret, orig_base, comp_base) = calib.CalibBaseFrame(
         jnt_measures,  # DOF × 8 matrix
         mes_tool,      # 7-element tool frame of the probe
-        base_size,     # output size (default 6)
+        base_size,     # output size (default/required 7)
     )
 
 Run from a sourced workspace:
@@ -92,11 +92,11 @@ def main() -> int:
         qa_tcp,
         measurements_tcp,
         mes_normal,
-        tool_offset_size=6,   # output: [tx, ty, tz, yaw, pitch, roll]
+        tool_offset_size=7,   # output: [tx, ty, tz, qw, qx, qy, qz]
     )
     print(f"  Return code: {ret_tcp}  (0 = success)")
     if ret_tcp == 0:
-        print(f"  Identified TCP offset (tx,ty,tz,yaw,pitch,roll):")
+        print(f"  Identified TCP offset (tx,ty,tz,qw,qx,qy,qz):")
         print(f"    {tool_offset.round(6)}")
     else:
         print(f"  TCP calibration did not converge (code={ret_tcp})")
@@ -119,7 +119,7 @@ def main() -> int:
     ret_base, orig_base, comp_base = scara.CalibBaseFrame(
         qa_base,
         mes_tool,
-        base_size=6,   # output: [tx, ty, tz, yaw, pitch, roll]
+        base_size=7,   # output: [tx, ty, tz, qw, qx, qy, qz]
     )
     print(f"  Return code: {ret_base}  (0 = success)")
     if ret_base == 0:

@@ -39,6 +39,7 @@ bool  RPE_Utility::ReadCSVFile(const std::string fileName,
       strs.str("");
       strs << "File " << fileName << " seems not exist!" << std::endl;
       LOG_ERROR(strs);
+      return false;
    }
    return true;
 }

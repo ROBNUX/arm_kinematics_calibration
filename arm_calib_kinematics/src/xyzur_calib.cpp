@@ -18,7 +18,65 @@ XyzUrCalib::XyzUrCalib(const Eigen::VectorXd& dh_UR,
     : XYZ_UR() {
   ur_calib = std::make_shared<UjntCalib>(dh_UR);
   xyz_calib = std::make_shared<XyzGantryCalib>(dh_XYZ);
-  initialized_ = true;
+  // also configure the inherited XYZ_UR's own (private) XYZ/UR sub-objects,
+  // so JntToCart/CartToJnt/CalcJacobian inherited from XYZ_UR (not
+  // overridden here) work on this instance too -- ur_calib/xyz_calib alone
+  // only serve the BaseCalibration methods overridden below.
+  size_t dof_XYZ = xyz_calib->GetDoF();
+  size_t dof_UR = ur_calib->GetDoF();
+  if (dof_XYZ + dof_UR != DoF_) {
+    std::ostringstream strs;
+    strs << GetName() << ":"
+         << "dh_UR/dh_XYZ imply DoF " << dof_UR << "+" << dof_XYZ
+         << " != XYZ_UR's fixed DoF " << DoF_
+         << " (dh_UR must be a 2-DOF UJNT vector, dh_XYZ a 3-DOF XYZ-gantry "
+            "vector); skipping XYZ_UR base sub-object sync, in function "
+         << __FUNCTION__ << ", line " << __LINE__ << std::endl;
+    LOG_ERROR(strs);
+    return;
+  }
+  Eigen::VectorXd kine_para(4 * DoF_);
+  kine_para.segment(0, dof_XYZ) = dh_XYZ.segment(0, dof_XYZ);
+  kine_para.segment(dof_XYZ, dof_UR) = dh_UR.segment(0, dof_UR);
+  kine_para.segment(DoF_, dof_XYZ) = dh_XYZ.segment(dof_XYZ, dof_XYZ);
+  kine_para.segment(DoF_ + dof_XYZ, dof_UR) = dh_UR.segment(dof_UR, dof_UR);
+  kine_para.segment(2 * DoF_, dof_XYZ) = dh_XYZ.segment(2 * dof_XYZ, dof_XYZ);
+  kine_para.segment(2 * DoF_ + dof_XYZ, dof_UR) =
+      dh_UR.segment(2 * dof_UR, dof_UR);
+  kine_para.segment(3 * DoF_, dof_XYZ) = dh_XYZ.segment(3 * dof_XYZ, dof_XYZ);
+  kine_para.segment(3 * DoF_ + dof_XYZ, dof_UR) =
+      dh_UR.segment(3 * dof_UR, dof_UR);
+  XYZ_UR::SetGeometry(kine_para);
+}
+
+void XyzUrCalib::SetGeometry(const Eigen::VectorXd& kine_para) {
+  // configures the inherited XYZ_UR's own XYZ/UR sub-objects
+  XYZ_UR::SetGeometry(kine_para);
+  if (!initialized_) {
+    return;
+  }
+  // also configure the calibration-capable sub-objects that
+  // LaserDistanceCalib/DirectMesCalib/etc. actually delegate to
+  Eigen::VectorXd alpha(DoF_), a(DoF_), theta(DoF_), d(DoF_);
+  alpha = kine_para.segment(0, DoF_);
+  a = kine_para.segment(DoF_, DoF_);
+  theta = kine_para.segment(2 * DoF_, DoF_);
+  d = kine_para.segment(3 * DoF_, DoF_);
+
+  size_t dof_XYZ = xyz_calib->GetDoF();
+  size_t dof_UR = ur_calib->GetDoF();
+  Eigen::VectorXd dh_XYZ(4 * dof_XYZ), dh_UR(4 * dof_UR);
+  dh_XYZ.segment(0, dof_XYZ) = alpha.head(dof_XYZ);
+  dh_XYZ.segment(dof_XYZ, dof_XYZ) = a.head(dof_XYZ);
+  dh_XYZ.segment(2 * dof_XYZ, dof_XYZ) = theta.head(dof_XYZ);
+  dh_XYZ.segment(3 * dof_XYZ, dof_XYZ) = d.head(dof_XYZ);
+  xyz_calib->SetGeometry(dh_XYZ);
+
+  dh_UR.segment(0, dof_UR) = alpha.tail(dof_UR);
+  dh_UR.segment(dof_UR, dof_UR) = a.tail(dof_UR);
+  dh_UR.segment(2 * dof_UR, dof_UR) = theta.tail(dof_UR);
+  dh_UR.segment(3 * dof_UR, dof_UR) = d.tail(dof_UR);
+  ur_calib->SetGeometry(dh_UR);
 }
 
 double XyzUrCalib::LaserDistanceCalib(
@@ -47,7 +105,7 @@ double XyzUrCalib::LaserDistanceCalib(
   }
   double ret = xyz_calib->LaserDistanceCalib(
       base_offset, tool_offset, laser2CartMap, cart_m, qa_array, laser_measure);
-  if (ret >= 0 && ur_calib->isDHCalibrated()) {
+  if (ret >= 0 && xyz_calib->isDHCalibrated()) {
     isDHCalibrated_ = true;
   }
   return ret;
@@ -86,7 +144,7 @@ double XyzUrCalib::DirectMesCalib(
   }
   double ret = ur_calib->DirectMesCalib(base_offset, tool_offset, cart_measure,
                                         measureMents, qa_array);
-  if (ret >= 0 && xyz_calib->isDHCalibrated()) {
+  if (ret >= 0 && ur_calib->isDHCalibrated()) {
     isDHCalibrated_ = true;
   }
   return ret;
