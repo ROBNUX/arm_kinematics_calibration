@@ -56,6 +56,9 @@ import numpy as np
 import calib_registry as reg
 
 DEFAULT_N = 8
+# 0 = Sam, 1 = Sam-Adam, 2 = Levenberg-Marquardt (see DecentAlg::OptGradientVec)
+DEFAULT_OPT_METHOD = 0
+OPT_METHOD_NAMES = {0: "Sam", 1: "Sam-Adam", 2: "Levenberg-Marquardt"}
 # A "regression" is improvement worse than -max(floor, frac * before). The
 # absolute floor (0.5mm) absorbs numerical noise -- meaningful for
 # translation-only mechanisms (XyzGantryCalib, SingleAxisCalib) where
@@ -106,6 +109,13 @@ def signed_magnitude(rng: np.random.Generator, scale: float,
     return mag * rng.choice([-1.0, 1.0])
 
 
+def make_calib(c, spec: reg.CalibSpec, nominal_para: np.ndarray, opt_method: int):
+    calib_cls = getattr(c, spec.name)
+    calib = calib_cls(nominal_para)
+    calib.setOptParam(np.array([float(opt_method), 1.0]))
+    return calib
+
+
 def plant_true_dh(spec: reg.CalibSpec, rng: np.random.Generator):
     a_true = list(spec.a)
     d_true = list(spec.d)
@@ -116,7 +126,8 @@ def plant_true_dh(spec: reg.CalibSpec, rng: np.random.Generator):
     return a_true, d_true
 
 
-def run_direct_mes_trial(c, m, spec: reg.CalibSpec, rng: np.random.Generator):
+def run_direct_mes_trial(c, m, spec: reg.CalibSpec, rng: np.random.Generator,
+                         opt_method: int = DEFAULT_OPT_METHOD):
     a_true, d_true = plant_true_dh(spec, rng)
     nominal_para = spec.build_kine_para()
     true_para = spec.build_kine_para(a=a_true, d=d_true)
@@ -136,8 +147,7 @@ def run_direct_mes_trial(c, m, spec: reg.CalibSpec, rng: np.random.Generator):
     cart_measure = np.zeros((8, spec.n_measures))
     cart_measure[0:3] = nominal_pos
 
-    calib_cls = getattr(c, spec.name)
-    calib = calib_cls(nominal_para)
+    calib = make_calib(c, spec, nominal_para, opt_method)
     err_after = calib.DirectMesCalib(reg.IDENTITY, reg.IDENTITY, cart_measure,
                                      measurements, qa_array)
     result = calib.VerifyDirectMesCalib(reg.IDENTITY, reg.IDENTITY, cart_measure,
@@ -150,7 +160,8 @@ def run_direct_mes_trial(c, m, spec: reg.CalibSpec, rng: np.random.Generator):
     }
 
 
-def run_laser_trial(c, m, spec: reg.CalibSpec, rng: np.random.Generator):
+def run_laser_trial(c, m, spec: reg.CalibSpec, rng: np.random.Generator,
+                    opt_method: int = DEFAULT_OPT_METHOD):
     a_true, d_true = plant_true_dh(spec, rng)
     nominal_para = spec.build_kine_para()
     true_para = spec.build_kine_para(a=a_true, d=d_true)
@@ -172,8 +183,7 @@ def run_laser_trial(c, m, spec: reg.CalibSpec, rng: np.random.Generator):
     laser2CartMap = np.eye(3)
     laser_measure = true_pos.copy()
 
-    calib_cls = getattr(c, spec.name)
-    calib = calib_cls(nominal_para)
+    calib = make_calib(c, spec, nominal_para, opt_method)
     err_after = calib.LaserDistanceCalib(reg.IDENTITY, reg.IDENTITY, laser2CartMap,
                                          cart_measure, qa_array, laser_measure)
     result = calib.VerifyLaserDistanceCalib(reg.IDENTITY, reg.IDENTITY, laser2CartMap,
@@ -186,7 +196,8 @@ def run_laser_trial(c, m, spec: reg.CalibSpec, rng: np.random.Generator):
     }
 
 
-def run_spec_test(spec_name: str, n_trials: int, seed: int) -> dict:
+def run_spec_test(spec_name: str, n_trials: int, seed: int,
+                  opt_method: int = DEFAULT_OPT_METHOD) -> dict:
     import arm_calib_commands as c
     import rob_motion_commands as m
 
@@ -201,7 +212,7 @@ def run_spec_test(spec_name: str, n_trials: int, seed: int) -> dict:
     for algo, runner in algos:
         for _ in range(n_trials):
             try:
-                res = runner(c, m, spec, rng)
+                res = runner(c, m, spec, rng, opt_method)
             except Exception as e:  # noqa: BLE001 -- want any failure captured
                 res = {"skipped": False, "exception": str(e)}
             trials[algo].append(res)
@@ -247,18 +258,18 @@ def print_result(res: dict, n_requested: int):
                   f"improvement={r['improvement']:.6f}")
 
 
-def run_child(n: int, spec_name: str, seed: int) -> int:
-    res = run_spec_test(spec_name, n, seed)
+def run_child(n: int, spec_name: str, seed: int, opt_method: int) -> int:
+    res = run_spec_test(spec_name, n, seed, opt_method)
     print("RESULT_JSON:" + json.dumps(res))
     return 0 if res["passed"] else 1
 
 
-def run_parent(n: int, specs, seed: int):
+def run_parent(n: int, specs, seed: int, opt_method: int):
     results = []
     for spec in specs:
         proc = subprocess.run(
             [sys.executable, __file__, str(n), "--type", spec.name,
-             "--seed", str(seed), "--_child"],
+             "--seed", str(seed), "--opt-method", str(opt_method), "--_child"],
             capture_output=True, text=True,
         )
         res = None
@@ -281,11 +292,14 @@ def main() -> int:
                      help="random trials per calibrator/algorithm (default 8)")
     ap.add_argument("--type", default=None, help="only test this calibrator name")
     ap.add_argument("--seed", type=int, default=42)
+    ap.add_argument("--opt-method", type=int, default=DEFAULT_OPT_METHOD,
+                     choices=[0, 1, 2],
+                     help="0=Sam, 1=Sam-Adam, 2=Levenberg-Marquardt (default 0)")
     ap.add_argument("--_child", action="store_true", help=argparse.SUPPRESS)
     args = ap.parse_args()
 
     if args._child:
-        return run_child(args.n, args.type, args.seed)
+        return run_child(args.n, args.type, args.seed, args.opt_method)
 
     specs = reg.build_all_specs()
     if args.type:
@@ -297,9 +311,10 @@ def main() -> int:
 
     print("=" * 78)
     print(f"Calibration recovery test — {args.n} trials/type/algorithm, "
-          f"seed={args.seed}")
+          f"seed={args.seed}, opt_method={args.opt_method} "
+          f"({OPT_METHOD_NAMES[args.opt_method]})")
     print("=" * 78)
-    results = run_parent(args.n, specs, args.seed)
+    results = run_parent(args.n, specs, args.seed, args.opt_method)
 
     print("=" * 78)
     n_fail = sum(1 for r in results if not r["passed"])

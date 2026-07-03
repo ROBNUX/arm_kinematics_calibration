@@ -12,7 +12,10 @@ DecentAlg::DecentAlg()
       beta2_(0.999),  // initial step size
       t_(1),
       first_time_cond_opt_(true),
-      initialized_(false) {}
+      initialized_(false),
+      lm_lambda_(LM_LAMBDA_INIT),
+      lm_prev_cost_(0.0),
+      lm_first_call_(true) {}
 
 DecentAlg::DecentAlg(const double eta, const double sam_region_scale,
                      const double beta1, const double beta2, const int alg_opt)
@@ -23,7 +26,10 @@ DecentAlg::DecentAlg(const double eta, const double sam_region_scale,
       beta2_(beta2),
       t_(1),
       first_time_cond_opt_(true),
-      initialized_(true) {}
+      initialized_(true),
+      lm_lambda_(LM_LAMBDA_INIT),
+      lm_prev_cost_(0.0),
+      lm_first_call_(true) {}
 
 bool DecentAlg::computeInvCond(const Eigen::MatrixXd& A, double& InvCond,
                                int& rank) {
@@ -192,10 +198,27 @@ bool DecentAlg::OptGradientVec(const Eigen::MatrixXd& A1,
     return false;
   }
 
+  if (alg_opt_ == 2) {
+    return OptGradientVecLM(A1, b, para);
+  }
+
   size_t numParam = A1.cols();
   Eigen::VectorXd delta_p_new(numParam);
   delta_p_new.setZero();  // set to 0;
 
+  // Tried dropping ReduceJacobian for alg_opt 0/1 too (mirroring alg_opt 2
+  // / LM's approach), relying only on JACOBIAN_RIDGE_EPS below for
+  // numerical safety -- measurably worse: Sam's convergence slowed enough
+  // to blow through a 300s test budget, and Sam-Adam picked up a real
+  // accuracy regression. LM's lambda_ is *adaptive* and doubles as both a
+  // numerical-safety net and a step-size limiter reacting to conditioning;
+  // Sam/Sam-Adam's step size is controlled by separate, non-adaptive
+  // mechanisms (SAM_RHO/eta_/moment estimates) that don't react to a
+  // poorly-conditioned full Jacobian the way LM's damping does, so a small
+  // fixed ridge alone isn't a substitute here. Keep the cached-once
+  // ReduceJacobian reduction for 0/1 (see its own known d[2]-type
+  // limitation in memory/project_calib_bug_hunt.md); only alg_opt 2 skips
+  // it.
   size_t numParam1;
   Eigen::MatrixXd A2;
   if (first_time_cond_opt_) {
@@ -209,6 +232,7 @@ bool DecentAlg::OptGradientVec(const Eigen::MatrixXd& A1,
     first_time_cond_opt_ = false;
     numParam1 = ind_indices_.size();
     adam_s_ = Eigen::VectorXd::Zero(numParam1);
+    adam_v_ = Eigen::VectorXd::Zero(numParam1);
   } else {
     A2 = A1;
     for (size_t i = 0; i < d_indices_.size(); i++) {
@@ -238,16 +262,22 @@ bool DecentAlg::OptGradientVec(const Eigen::MatrixXd& A1,
   // scaling matrix
   Eigen::MatrixXd scaleD = Eigen::MatrixXd::Identity(numParam1, numParam1);
 
-  // scaling cols of A
+  // scaling cols of A (columns with ~zero norm -- i.e. a DH perturbation
+  // direction this Jacobian is structurally blind to -- are left unscaled;
+  // JACOBIAN_RIDGE_EPS below keeps ATA invertible regardless)
   Eigen::MatrixXd A = A2;
   for (size_t i = 0; i < numParam1; i++) {
     Eigen::VectorXd colV = A2.col(i);
     double scale = colV.norm();
+    if (scale < ZERO_COL_EPS) {
+      scale = 1.0;
+    }
     A.col(i) = colV / scale;
     scaleD(i, i) = 1 / scale;
   }
-  Eigen::MatrixXd ATA = A.transpose() * A;
-  Eigen::VectorXd grad = ATA.inverse() * A.transpose() * b;
+  Eigen::MatrixXd ATA = A.transpose() * A +
+      JACOBIAN_RIDGE_EPS * Eigen::MatrixXd::Identity(numParam1, numParam1);
+  Eigen::VectorXd grad = ATA.ldlt().solve(A.transpose() * b);
 
   // square of gradient, used in adam-type algorithm
   Eigen::VectorXd grad_sq(numParam1);
@@ -291,10 +321,24 @@ bool DecentAlg::OptGradientVec(const Eigen::MatrixXd& A1,
       t_++;
       return false;  // for recompute the sam grad
     } else {         // return the actual (worse case of batch grad)
-      // Moving average of the squared gradients
-      adam_s_ = beta2_ * adam_s_ + (1 - beta2_) * grad_sq;
-      double norm_sq = std::max(sqrt(adam_s_.norm()), EPSILON_ADAM_ALG);
-      delta_p_old = eta_ * grad / norm_sq;
+      // True per-parameter Adam: first moment (momentum, beta1_) and second
+      // moment (RMSprop, beta2_), each applied elementwise -- NOT a single
+      // global scalar norm, which would apply the same adaptive scale to
+      // every DH parameter regardless of its own gradient history and
+      // defeat the entire point of a per-parameter adaptive method.
+      // Bias-corrected (standard Adam) so beta2_=0.999's ~1000-step warm-up
+      // time doesn't dominate a calibration run that only takes tens of
+      // actual steps.
+      adam_v_ = beta1_ * adam_v_ + (1.0 - beta1_) * grad;
+      adam_s_ = beta2_ * adam_s_ + (1.0 - beta2_) * grad_sq;
+      double adam_t = double(t_ / 2);  // count of actual steps so far, incl. this one
+      Eigen::VectorXd v_hat = adam_v_ / (1.0 - std::pow(beta1_, adam_t));
+      Eigen::VectorXd s_hat = adam_s_ / (1.0 - std::pow(beta2_, adam_t));
+      delta_p_old.resize(numParam1);
+      for (size_t i = 0; i < numParam1; i++) {
+        double denom = std::max(std::sqrt(s_hat(i)), EPSILON_ADAM_ALG);
+        delta_p_old(i) = eta_ * v_hat(i) / denom;
+      }
     }
   }
   delta_p_old = scaleD * delta_p_old;
@@ -306,6 +350,69 @@ bool DecentAlg::OptGradientVec(const Eigen::MatrixXd& A1,
   strs << "grad offset at step " << t_ << " = " << para << std::endl;
   t_++;
   LOG_INFO(strs);
+  return true;
+}
+
+bool DecentAlg::OptGradientVecLM(const Eigen::MatrixXd& A1,
+                                 const Eigen::VectorXd& b,
+                                 Eigen::VectorXd& para) {
+  std::ostringstream strs;
+  size_t numParam = A1.cols();
+
+  // Column-normalize for a numerically well-scaled damping term (matches
+  // the SAM path's own normalization), guarding against near-zero columns
+  // (which the SAM path instead handles by permanently dropping via
+  // ReduceJacobian -- LM doesn't need to: a near-zero column contributes a
+  // near-zero row/col to ATA, and (ATA + lambda*I) stays well-conditioned
+  // regardless once lambda > 0).
+  Eigen::MatrixXd A = A1;
+  Eigen::MatrixXd scaleD = Eigen::MatrixXd::Identity(numParam, numParam);
+  for (size_t i = 0; i < numParam; i++) {
+    double scale = A1.col(i).norm();
+    if (scale < ZERO_COL_EPS) {
+      scale = 1.0;
+    }
+    A.col(i) = A1.col(i) / scale;
+    scaleD(i, i) = 1.0 / scale;
+  }
+
+  Eigen::MatrixXd ATA = A.transpose() * A;
+  Eigen::VectorXd Atb = A.transpose() * b;
+
+  // Adapt lambda from the residual-cost trend across successive calls: the
+  // caller always rebuilds A/b from the post-step parameters before calling
+  // again, so a comparison against the previous call's cost is exactly the
+  // classic LM accept/reject signal, with no change needed to the calling
+  // convention. A shrinking cost means the local (damped) linear model is
+  // trustworthy -> shrink lambda toward a fuller Gauss-Newton step; a
+  // growing cost means the last step overshot -> grow lambda toward a more
+  // conservative, gradient-descent-like step. (The *caller's* own
+  // previous_err/estimation_err outer-loop check remains the final
+  // safety net that discards a bad step's DH values entirely.)
+  double cur_cost = b.squaredNorm();
+  if (!lm_first_call_) {
+    if (cur_cost < lm_prev_cost_) {
+      lm_lambda_ = std::max(lm_lambda_ * LM_LAMBDA_DECREASE, LM_LAMBDA_MIN);
+    } else {
+      lm_lambda_ = std::min(lm_lambda_ * LM_LAMBDA_INCREASE, LM_LAMBDA_MAX);
+    }
+  }
+  lm_prev_cost_ = cur_cost;
+  lm_first_call_ = false;
+
+  Eigen::MatrixXd damped =
+      ATA + lm_lambda_ * Eigen::MatrixXd::Identity(numParam, numParam);
+  // damped is SPD for lambda > 0 -- LDLT is both faster and more numerically
+  // robust here than an explicit inverse, particularly for small lambda
+  // where ATA alone may still be near-singular.
+  Eigen::VectorXd delta = damped.ldlt().solve(Atb);
+  para = scaleD * delta;
+
+  strs.str("");
+  strs << "LM step " << t_ << ": lambda=" << lm_lambda_
+       << ", cost=" << cur_cost << ", delta=" << para.transpose() << std::endl;
+  LOG_INFO(strs);
+  t_++;
   return true;
 }
 
@@ -322,6 +429,9 @@ void DecentAlg::setParam(const double eta, const double sam_region_scale,
   first_time_cond_opt_ = true;
   ind_indices_.clear();
   d_indices_.clear();
+  lm_lambda_ = LM_LAMBDA_INIT;
+  lm_prev_cost_ = 0.0;
+  lm_first_call_ = true;
 }
 
 }  // namespace kinematics_lib

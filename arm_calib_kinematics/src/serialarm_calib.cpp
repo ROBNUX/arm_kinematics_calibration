@@ -249,6 +249,11 @@ double SerialArmCalib::LaserDistanceCalib(
   double previous_err = std::numeric_limits<double>::max();
   double estimation_err = 0.5 * previous_err;
   int cur_iter = 0;
+  // SAM's probe step deliberately lands on a nearby *worse* point by design,
+  // so a single probe+actual pair's error comparison is a noisy convergence
+  // signal on its own -- require several consecutive non-improving pairs
+  // before actually giving up (see MAX_CALIB_STALL_PAIRS's own comment).
+  int stall_count = 0;
 
   // because laser displacement sensors only measures the distances traveled
   // so we need to form relative coordinate vector change (so does Jacobian
@@ -257,13 +262,19 @@ double SerialArmCalib::LaserDistanceCalib(
   Eigen::Vector3d first_p;  // first Cartesian EE coordinates
 
   // decay process until (1) estimation_err is less than a given limit
-  // or (2) error change is less than a givne limit or maximal iteration reached
+  // or (2) error stops improving for MAX_CALIB_STALL_PAIRS consecutive
+  // pairs, or maximal iteration reached
   while ((estimation_err > MAX_CALIB_STOP_ERR &&
-              previous_err - estimation_err > MAX_CALIB_MATCHING_ERR ||
+              stall_count < MAX_CALIB_STALL_PAIRS ||
           !resetCache_) &&
          cur_iter < MAX_CALIB_OUTER_ITER) {
     // keep a copy of previous-step paramter vector
     if (resetCache_) {
+      if (previous_err - estimation_err <= MAX_CALIB_MATCHING_ERR) {
+        stall_count++;
+      } else {
+        stall_count = 0;
+      }
       a_old = a_tmp;
       alpha_old = alpha_tmp;
       d_old = d_tmp;
@@ -655,12 +666,22 @@ double SerialArmCalib::DirectMesCalib(
   double estimation_err = 0.5 * previous_err;
 
   int cur_iter = 0;
+  // SAM's probe step deliberately lands on a nearby *worse* point by design,
+  // so a single probe+actual pair's error comparison is a noisy convergence
+  // signal on its own -- require several consecutive non-improving pairs
+  // before actually giving up (see MAX_CALIB_STALL_PAIRS's own comment).
+  int stall_count = 0;
   while ((estimation_err > MAX_CALIB_STOP_ERR &&
-              previous_err - estimation_err > MAX_CALIB_MATCHING_ERR ||
+              stall_count < MAX_CALIB_STALL_PAIRS ||
           !resetCache_) &&
          cur_iter < MAX_CALIB_OUTER_ITER) {
     // assign previous value
     if (resetCache_) {
+      if (previous_err - estimation_err <= MAX_CALIB_MATCHING_ERR) {
+        stall_count++;
+      } else {
+        stall_count = 0;
+      }
       a_old = a_tmp;
       alpha_old = alpha_tmp;
       d_old = d_tmp;

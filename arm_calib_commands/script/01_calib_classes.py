@@ -4,7 +4,7 @@
 Covers:
   - Constructing every concrete calibration class (default and with kine_para).
   - GetName  — verify each class reports its expected name.
-  - setOptParam — configure the gradient optimizer (Sam / Sam-Adam).
+  - setOptParam — configure the gradient optimizer (Sam / Sam-Adam / LM).
   - GetCalibParamSet / LoadCalibParamSet — parameter-set round-trip.
   - ResetCalibration — restore a calibrated model to its nominal state.
 

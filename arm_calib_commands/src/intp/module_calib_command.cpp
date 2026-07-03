@@ -356,8 +356,8 @@ PYBIND11_MODULE(arm_calib_commands, m) {
            "calibration parameters. Returns (ok, Js_t1, Js_r1).")
       .def("setOptParam", &py_setOptParam, py::arg("opt_param"),
            "Configure gradient-type optimization parameters. opt_param[0] = "
-           "opt_method (0: Sam, 1: Sam-Adam); opt_param[1] = "
-           "sam_region_scale.");
+           "opt_method (0: Sam, 1: Sam-Adam, 2: Levenberg-Marquardt); "
+           "opt_param[1] = sam_region_scale (options 0/1 only).");
 
   py::class_<SerialArmCalib, BaseCalibration>(m, "SerialArmCalib")
       .def(py::init<>())

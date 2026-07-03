@@ -216,9 +216,17 @@ class KINEMATICS_API BaseCalibration {
    * @brief set parameter for gradient-type optimization algorithms
     * @param opt_param optimization parameters, e.g. opt_method, sam_region_scale, etc.
      * Note: the content of opt_param depends on the implementation of the
-     * calibration algorithm, e.g. for sam-type optimization, opt_param[0] is
-     * opt_method = 0, opt_param[1] is sam_region_scale; for sam-adam-type
-     * optimization, opt_param[0] is opt_method = 1, opt_param[1] is sam_region_scale
+     * calibration algorithm; opt_param[0] selects the algorithm
+     * (DecentAlg::alg_opt_) and opt_param[1] is sam_region_scale (used by
+     * options 0/1 only):
+     *   0 = Sam-type gradient descent (fixed-radius SAM probe step, then a
+     *       plain eta-scaled gradient step)
+     *   1 = Sam-Adam-type (same SAM probe, then a per-parameter
+     *       bias-corrected first+second-moment adaptive step)
+     *   2 = Levenberg-Marquardt damped Gauss-Newton (no SAM probing; each
+     *       outer iteration takes a full adaptively-damped step, generally
+     *       converging in far fewer iterations than 0/1 -- see
+     *       DecentAlg::OptGradientVecLM)
    */
   virtual void setOptParam(const EigenDRef<Eigen::VectorXd>& opt_param);
 
