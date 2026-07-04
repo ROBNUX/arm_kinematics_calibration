@@ -359,25 +359,91 @@ bool DecentAlg::OptGradientVecLM(const Eigen::MatrixXd& A1,
   std::ostringstream strs;
   size_t numParam = A1.cols();
 
-  // Column-normalize for a numerically well-scaled damping term (matches
-  // the SAM path's own normalization), guarding against near-zero columns
-  // (which the SAM path instead handles by permanently dropping via
-  // ReduceJacobian -- LM doesn't need to: a near-zero column contributes a
-  // near-zero row/col to ATA, and (ATA + lambda*I) stays well-conditioned
-  // regardless once lambda > 0).
-  Eigen::MatrixXd A = A1;
-  Eigen::MatrixXd scaleD = Eigen::MatrixXd::Identity(numParam, numParam);
+  // Exclude columns with negligible effect (near-zero absolute norm, or
+  // near-zero *relative* to the largest column) from the solve entirely,
+  // rather than normalizing them in place. A column that is nominally zero
+  // but not exactly so (floating-point roundoff from the FK/Jacobian chain
+  // -- e.g. a SCARA's theta[3]/a[3], which have zero true effect on tip
+  // *position* since they're past the last position-relevant joint) would
+  // otherwise get divided by its own tiny norm, amplifying pure noise up
+  // to unit scale and contaminating the regression as if it were real
+  // signal -- confirmed concretely: exactly this caused a calibrated
+  // theta[3] to diverge to ~1e11 rad once lm_lambda_ shrank enough on
+  // later, well-converged iterations (position error stayed fine only
+  // because theta[3] doesn't affect position at all -- a lucky accident
+  // of this parameterization, not something to rely on). Reuses
+  // JACOBIAN_MIN_SING_RATIO (the same relative-negligibility threshold
+  // ReduceJacobian/computeInvCond already use) for consistency. Excluded
+  // columns always get an exact zero step.
+  std::vector<double> col_norms(numParam);
+  double max_norm = 0.0;
   for (size_t i = 0; i < numParam; i++) {
-    double scale = A1.col(i).norm();
-    if (scale < ZERO_COL_EPS) {
-      scale = 1.0;
+    col_norms[i] = A1.col(i).norm();
+    max_norm = std::max(max_norm, col_norms[i]);
+  }
+  std::vector<size_t> active;
+  for (size_t i = 0; i < numParam; i++) {
+    if (col_norms[i] > ZERO_COL_EPS &&
+        col_norms[i] > JACOBIAN_MIN_SING_RATIO * max_norm) {
+      active.push_back(i);
     }
-    A.col(i) = A1.col(i) / scale;
-    scaleD(i, i) = 1.0 / scale;
+  }
+  if (active.empty()) {
+    strs.str("");
+    strs << "LM: every column is structurally uninformative (position-"
+         << "invisible), cannot compute a step, in " << __FUNCTION__
+         << ", at line " << __LINE__ << std::endl;
+    LOG_ERROR(strs);
+    para = Eigen::VectorXd::Zero(numParam);
+    t_++;
+    return true;
+  }
+
+  size_t numActive = active.size();
+  Eigen::MatrixXd A(A1.rows(), numActive);
+  Eigen::VectorXd scale_active(numActive);
+  for (size_t i = 0; i < numActive; i++) {
+    scale_active(i) = col_norms[active[i]];
+    A.col(i) = A1.col(active[i]) / scale_active(i);
   }
 
   Eigen::MatrixXd ATA = A.transpose() * A;
   Eigen::VectorXd Atb = A.transpose() * b;
+
+  // The per-column norm filter above only catches columns that are
+  // individually near-zero -- it does NOT catch a *group* of columns that
+  // are each individually normal-sized but nearly collinear with each
+  // other (e.g. a SCARA's d[0..3]: since alpha=0 for every joint, each
+  // d[i] is a pure additive Z-translation, so their Jacobian columns are
+  // all nearly parallel). For such a group, ATA has a near-zero
+  // *eigenvalue* (not a near-zero diagonal entry), and as lm_lambda_
+  // shrinks because *other*, well-identified directions are converging
+  // nicely, any tiny genuine signal leaking into that near-null direction
+  // gets amplified without bound -- confirmed concretely: this produced
+  // calibrated d values of hundreds of meters for a real SCARA dataset
+  // while still reporting a deceptively good held-out position error
+  // (the huge, physically-nonsensical components happened to nearly
+  // cancel in their *combined* effect on this particular test set, not
+  // because the fit is actually trustworthy).
+  //
+  // Fix: derive a lambda *floor* from A's own singular values so that
+  // (ATA + lambda*I)'s worst-case inverse condition number never drops
+  // below MIN_JAC_INV_COND_ENGOUGH (the same acceptability threshold
+  // ReduceJacobian/computeInvCond already use elsewhere), independent of
+  // how far the globally-adaptive lm_lambda_ has shrunk. Solving
+  // (sigma_min^2+lambda)/(sigma_max^2+lambda) >= r for lambda gives
+  // lambda >= (r*sigma_max^2 - sigma_min^2) / (1-r).
+  Eigen::JacobiSVD<Eigen::MatrixXd> svd(A);
+  Eigen::VectorXd sv = svd.singularValues();
+  double sigma_max = sv(0);
+  double sigma_min = sv(sv.size() - 1);
+  double lambda_floor = 0.0;
+  double denom = 1.0 - MIN_JAC_INV_COND_ENGOUGH;
+  if (denom > 0.0) {
+    double numerator = MIN_JAC_INV_COND_ENGOUGH * sigma_max * sigma_max -
+                       sigma_min * sigma_min;
+    lambda_floor = std::max(0.0, numerator / denom);
+  }
 
   // Adapt lambda from the residual-cost trend across successive calls: the
   // caller always rebuilds A/b from the post-step parameters before calling
@@ -400,17 +466,28 @@ bool DecentAlg::OptGradientVecLM(const Eigen::MatrixXd& A1,
   lm_prev_cost_ = cur_cost;
   lm_first_call_ = false;
 
+  // effective_lambda (not lm_lambda_ itself) is what actually gets applied
+  // -- the floor is a per-call, conditioning-driven correction and must
+  // not be allowed to persist/ratchet lm_lambda_'s own adaptive trajectory
+  double effective_lambda = std::max(lm_lambda_, lambda_floor);
   Eigen::MatrixXd damped =
-      ATA + lm_lambda_ * Eigen::MatrixXd::Identity(numParam, numParam);
+      ATA + effective_lambda * Eigen::MatrixXd::Identity(numActive, numActive);
   // damped is SPD for lambda > 0 -- LDLT is both faster and more numerically
   // robust here than an explicit inverse, particularly for small lambda
   // where ATA alone may still be near-singular.
-  Eigen::VectorXd delta = damped.ldlt().solve(Atb);
-  para = scaleD * delta;
+  Eigen::VectorXd delta_active = damped.ldlt().solve(Atb);
+
+  para = Eigen::VectorXd::Zero(numParam);
+  for (size_t i = 0; i < numActive; i++) {
+    para(active[i]) = delta_active(i) / scale_active(i);
+  }
 
   strs.str("");
   strs << "LM step " << t_ << ": lambda=" << lm_lambda_
-       << ", cost=" << cur_cost << ", delta=" << para.transpose() << std::endl;
+       << ", lambda_floor=" << lambda_floor
+       << ", effective_lambda=" << effective_lambda << ", cost=" << cur_cost
+       << ", active_cols=" << numActive << "/" << numParam
+       << ", delta=" << para.transpose() << std::endl;
   LOG_INFO(strs);
   t_++;
   return true;
