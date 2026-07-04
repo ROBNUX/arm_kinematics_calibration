@@ -1844,7 +1844,12 @@ int SerialArmCalib::HomotopyAlg(const Eigen::VectorXd& init_jnt0,
     var_para(4 * i + 2) = step_diff_theta(i);
     var_para(4 * i + 3) = step_diff_d(i);
   }
-  Eigen::VectorXd kine_para(4 * DoF_), tmp_para;  // clearing kine_para
+  // tmp_para must be pre-sized: UpdateDH(orig_dh, jnt, new_dh)'s concrete
+  // overrides (Scara::UpdateDH etc.) require new_dh.size() == orig_dh.size()
+  // and silently no-op (LOG_ERROR only) otherwise -- matching the
+  // pre-sized tmp_para(4*DoF_) pattern already used at every other
+  // UpdateDH call site in this file (DirectMesCalib/LaserDistanceCalib/etc).
+  Eigen::VectorXd kine_para(4 * DoF_), tmp_para(4 * DoF_);
   // A djnt + B dpara = 0
   Eigen::MatrixXd A, B;
   for (int j = 0; j < step; j++) {
@@ -1853,7 +1858,21 @@ int SerialArmCalib::HomotopyAlg(const Eigen::VectorXd& init_jnt0,
     kine_para.segment(DoF_, DoF_) = a_ + step_diff_a * j;
     kine_para.segment(2 * DoF_, DoF_) = theta_ + step_diff_theta * j;
     kine_para.segment(3 * DoF_, DoF_) = d_ + step_diff_d * j;
-    UpdateDH(kine_para, jnt0, tmp_para);
+    // Scara/SixAxis_1/UJNT/XYZGantry/singleAxisModule each declare TWO
+    // UpdateDH overloads with identical parameter *types*
+    // (UpdateDH(orig_dh, jnt, new_dh) vs UpdateDH(jnt, theta, d)), only
+    // distinguished by const-ness of the 2nd/3rd params. Passing named
+    // non-const lvalues (jnt0, tmp_para) here is ambiguous in intent and
+    // silently resolves to the WRONG overload (UpdateDH(jnt,theta,d), an
+    // exact-match preference for non-const binding) since both jnt0 and
+    // tmp_para bind as non-const -- confirmed via robLog.log showing
+    // Scara::UpdateDH's 3-arg overload's own size-mismatch message firing
+    // here, which silently no-ops (LOG_ERROR only, no exception) and
+    // cascades into every CpsRobPath/CpsJnt call failing. The explicit
+    // const cast below forces the intended (orig_dh, jnt, new_dh) overload,
+    // since a const lvalue cannot bind to the other overload's non-const
+    // jnt/theta parameter at all.
+    UpdateDH(kine_para, static_cast<const Eigen::VectorXd&>(jnt0), tmp_para);
     Eigen::MatrixXd Jp_t, Jp_r;
     Pose p;
     // compute the expected values from known canonical kinematic parameters
@@ -1979,7 +1998,8 @@ int SerialArmCalib::OptimizeJntAfterCalib(const Eigen::VectorXd& init_jnt0,
   unsigned int numSteps = CALIB_LINE_SEARCH_STEPS;
   double step_size = 1.0 / numSteps;
   int cur_iter = 0;
-  Eigen::VectorXd kine_para(4 * DoF_), tmp_para;  // fill in calibrated DH set
+  // tmp_para must be pre-sized -- see HomotopyAlg's identical fix above
+  Eigen::VectorXd kine_para(4 * DoF_), tmp_para(4 * DoF_);  // fill in calibrated DH set
   kine_para.segment(0, DoF_) = alpha_c_;
   kine_para.segment(DoF_, DoF_) = a_c_;
   kine_para.segment(2 * DoF_, DoF_) = theta_c_;
@@ -1987,7 +2007,10 @@ int SerialArmCalib::OptimizeJntAfterCalib(const Eigen::VectorXd& init_jnt0,
   while (estimation_err > MAX_CALIB_MATCHING_ERR && cur_iter < MAX_CALIB_ITER) {
     cur_iter++;
     // recall tmp_para is the calibrated DH set
-    UpdateDH(kine_para, jnt_tmp, tmp_para);
+    // see HomotopyAlg's identical fix above for why the explicit const
+    // cast is required here (ambiguous UpdateDH overload otherwise
+    // silently resolves to the wrong one)
+    UpdateDH(kine_para, static_cast<const Eigen::VectorXd&>(jnt_tmp), tmp_para);
     Eigen::MatrixXd Jp_t, Jp_r;
     Pose p;
 
@@ -2077,7 +2100,10 @@ int SerialArmCalib::OptimizeJntAfterCalib(const Eigen::VectorXd& init_jnt0,
     // dynamic step size adjustment
     for (size_t i = 0; i < numSteps; i++) {
       jnt_iter = jnt_tmp + (i + 1) * step_size * delta_t;
-      UpdateDH(kine_para, jnt_iter, tmp_para);
+      // see HomotopyAlg's identical fix above for why the explicit const
+      // cast is required here (ambiguous UpdateDH overload otherwise
+      // silently resolves to the wrong one)
+      UpdateDH(kine_para, static_cast<const Eigen::VectorXd&>(jnt_iter), tmp_para);
       Eigen::MatrixXd Jp_t1, Jp_r1;
       Pose p1;
       // compute the expected values from known canonical kinematic parameters
